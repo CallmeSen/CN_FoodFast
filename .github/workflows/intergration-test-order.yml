@@ -1,0 +1,172 @@
+name: Order Service Integration Test
+
+on:
+  push:
+    branches:
+      - main
+      - source
+    paths:
+      - 'backend/order-service/**'
+      - '.github/workflows/intergration-test-order.yml'
+  pull_request:
+    branches:
+      - main
+      - source
+    paths:
+      - 'backend/order-service/**'
+  workflow_dispatch:
+
+jobs:
+  setup-infrastructure:
+    name: Start Docker Compose Stack
+    runs-on: self-hosted
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Start Docker Compose Stack
+        shell: powershell
+        run: |
+          Write-Host "Checking CNPM Docker Compose stack..." -ForegroundColor Cyan
+          
+          # Check if containers are already running
+          $running = docker-compose -p cnpm-final-project ps -q 2>$null | Out-String
+          
+          if ($running) {
+            Write-Host "Stack already running, checking health..." -ForegroundColor Green
+            docker-compose -p cnpm-final-project ps
+          } else {
+            Write-Host "Starting Docker Compose stack..." -ForegroundColor Yellow
+            docker-compose -p cnpm-final-project up -d mongodb mongodb-restaurant mongodb-order mongodb-payment redis kafka zookeeper
+            
+            Write-Host "`nWaiting for services to be ready..." -ForegroundColor Cyan
+            Start-Sleep -Seconds 15
+          }
+          
+          Write-Host "`nDocker Compose Services Status:" -ForegroundColor Cyan
+          docker-compose -p cnpm-final-project ps
+          
+          Write-Host "`nMongoDB Health Check:" -ForegroundColor Cyan
+          docker ps --filter "name=mongodb" --format "table {{.Names}}\t{{.Status}}"
+          
+  order-integration-test:
+    name: Order Service Integration Test
+    runs-on: self-hosted
+    needs: setup-infrastructure
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Dependencies
+        working-directory: backend/order-service
+        run: npm ci
+
+      - name: Run Integration Tests
+        working-directory: backend/order-service
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Continue'
+          Write-Host "Starting Order Service Integration Tests..." -ForegroundColor Cyan
+          $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+          Write-Host "[$timestamp] Test execution started" -ForegroundColor Green
+          
+          $logFile = "order-integration-test.log"
+          npm run test:integration *>&1 | ForEach-Object {
+            $_ | Out-File -FilePath $logFile -Append -Encoding utf8
+            Write-Host $_
+          }
+          
+          $exitCode = $LASTEXITCODE
+          $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+          
+          if ($exitCode -eq 0) {
+            $status = "PASSED"
+            $color = "Green"
+          } else {
+            $status = "FAILED"
+            $color = "Red"
+          }
+          
+          $statusMsg = "[$timestamp] Order tests $status (exit code: $exitCode)"
+          Write-Host $statusMsg -ForegroundColor $color
+          $statusMsg | Out-File -FilePath $logFile -Append -Encoding utf8
+          
+          if ($exitCode -ne 0) { exit $exitCode }
+        continue-on-error: true
+
+      - name: Upload Test Logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: order-integration-logs
+          path: backend/order-service/order-integration-test.log
+          retention-days: 7
+
+      - name: Push Order Logs to Loki
+        if: always()
+        shell: powershell
+        working-directory: backend/order-service
+        env:
+          LOKI_URL: ${{ secrets.LOKI_URL }}
+          LOKI_USERNAME: ${{ secrets.LOKI_USERNAME }}
+          LOKI_PASSWORD: ${{ secrets.LOKI_PASSWORD }}
+        run: |
+          if (-not $env:LOKI_URL) {
+            Write-Host "WARNING: LOKI_URL not configured, skipping log export" -ForegroundColor Yellow
+            exit 0
+          }
+          
+          if (-not (Test-Path "order-integration-test.log")) {
+            Write-Host "WARNING: Log file not found" -ForegroundColor Yellow
+            exit 0
+          }
+          
+          Write-Host "Pushing Order Service logs to Loki..." -ForegroundColor Cyan
+          
+          $script = 'import json,os,time,sys;from pathlib import Path;log_file=""order-integration-test.log"";'
+          $script += 'exit(0) if not Path(log_file).exists() else None;'
+          $script += 'f=open(log_file,""r"",encoding=""utf-8"",errors=""ignore"");content=f.read();f.close();'
+          $script += 'test_status=""passed"" if ""PASSED"" in content else (""failed"" if ""FAILED"" in content else ""unknown"");'
+          $script += 'labels={""job"":""integration-tests"",""service"":""order"",""repo"":os.environ.get(""GITHUB_REPOSITORY"",""unknown""),""workflow"":os.environ.get(""GITHUB_WORKFLOW"",""unknown""),""run_id"":os.environ.get(""GITHUB_RUN_ID"",""unknown""),""run_number"":os.environ.get(""GITHUB_RUN_NUMBER"",""unknown""),""branch"":os.environ.get(""GITHUB_REF_NAME"",""unknown""),""commit"":os.environ.get(""GITHUB_SHA"",""unknown"")[:7],""test_status"":test_status,""log_type"":""integration-test"",""environment"":""ci""};'
+          $script += 'values=[];base_ts=int(time.time()*1e9);'
+          $script += 'f=open(log_file,""r"",encoding=""utf-8"",errors=""ignore"");lines=f.readlines();f.close();'
+          $script += '[values.append([str(base_ts+idx*1000),line.rstrip()]) for idx,line in enumerate(lines)];'
+          $script += 'f=open(""loki-payload.json"",""w"",encoding=""utf-8"");json.dump({""streams"":[{""stream"":labels,""values"":values}]},f);f.close();'
+          $script += 'print(f""Prepared {len(values)} log lines (status: {test_status})"")'
+          
+          python -c $script
+          
+          if (-not (Test-Path "loki-payload.json")) {
+            Write-Host "ERROR: Failed to generate payload" -ForegroundColor Red
+            exit 1
+          }
+          
+          if ($env:LOKI_USERNAME -and $env:LOKI_PASSWORD) {
+            Write-Host "Using basic authentication" -ForegroundColor Cyan
+            $response = curl.exe -sS -w "`n%{http_code}" -X POST `
+              -u "${env:LOKI_USERNAME}:${env:LOKI_PASSWORD}" `
+              -H "Content-Type: application/json" `
+              $env:LOKI_URL `
+              --data-binary "@loki-payload.json" 2>&1
+          } else {
+            Write-Host "No authentication (LOKI_USERNAME not set)" -ForegroundColor Yellow
+            $response = curl.exe -sS -w "`n%{http_code}" -X POST `
+              -H "Content-Type: application/json" `
+              $env:LOKI_URL `
+              --data-binary "@loki-payload.json" 2>&1
+          }
+          
+          $lines = $response -split "`n"
+          $httpCode = $lines[-1]
+          
+          if ($httpCode -eq "204" -or $httpCode -eq "200") {
+            Write-Host "SUCCESS: Pushed Order logs to Loki (HTTP $httpCode)" -ForegroundColor Green
+          } else {
+            Write-Host "ERROR: Failed to push logs (HTTP $httpCode)" -ForegroundColor Red
+            exit 1
+          }

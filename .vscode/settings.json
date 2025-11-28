@@ -1,0 +1,20 @@
+{
+  "yaml.schemas": {
+    "https://json.schemastore.org/prometheus.json": [
+      "monitoring/prometheus/*.yml"
+    ]
+  },
+  "yaml.validate": true,
+  "yaml.customTags": [
+    "!include scalar"
+  ],
+  // Disable validation for Grafana provisioning files (they use custom schema)
+  "[yaml]": {
+    "editor.defaultFormatter": "redhat.vscode-yaml"
+  },
+  "files.associations": {
+    "**/monitoring/grafana/provisioning/**/*.yml": "yaml",
+    "**/monitoring/loki/*.yml": "yaml",
+    "**/monitoring/promtail/*.yml": "yaml"
+  }
+}

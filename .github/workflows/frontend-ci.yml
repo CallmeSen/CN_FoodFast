@@ -1,0 +1,590 @@
+name: frontend-ci
+on:
+  push:
+    branches:
+      - main
+      - phase-1
+      - phase-2
+      - phase-3
+      - phase-4
+      - phase-5
+      - source
+    paths:
+      - 'frontend/**'
+      - '.github/workflows/frontend-ci.yml'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'frontend/**'
+      - '.github/workflows/frontend-ci.yml'
+  schedule:
+    # Run security checks weekly on Monday at 9 AM UTC
+    - cron: '0 9 * * 1'
+  workflow_dispatch:
+    inputs:
+      skip_tests:
+        description: 'Skip tests (for emergency builds)'
+        required: false
+        default: 'false'
+
+env:
+  NODE_VERSION_LATEST: '24.8.0'
+
+jobs:
+  # ==================== Code Quality & Security Checks ====================
+  code-quality:
+    name: Code Quality Check
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full git history for better analysis
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION_LATEST }}
+
+      # Client App Quality
+      - name: Check Client App Dependencies
+        working-directory: frontend/client
+        run: |
+          npm ci
+          echo "Checking for outdated packages..."
+          npm outdated || true
+
+      # Admin App Quality
+      - name: Check Admin App Dependencies
+        working-directory: frontend/admin
+        run: |
+          npm ci
+          echo "Checking for outdated packages..."
+          npm outdated || true
+
+      # Restaurant App Quality
+      - name: Check Restaurant App Dependencies
+        working-directory: frontend/restaurant
+        run: |
+          npm ci
+          echo "Checking for outdated packages..."
+          npm outdated || true
+
+  security-audit:
+    name: Security Audit
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION_LATEST }}
+
+      - name: Security Audit - Client App
+        working-directory: frontend/client
+        run: |
+          npm ci
+          echo "Running security audit for Client App..."
+          npm audit --audit-level=moderate || true
+          npm audit fix --dry-run || true
+
+      - name: Security Audit - Admin App
+        working-directory: frontend/admin
+        run: |
+          npm ci
+          echo "Running security audit for Admin App..."
+          npm audit --audit-level=moderate || true
+          npm audit fix --dry-run || true
+
+      - name: Security Audit - Restaurant App
+        working-directory: frontend/restaurant
+        run: |
+          npm ci
+          echo "Running security audit for Restaurant App..."
+          npm audit --audit-level=moderate || true
+          npm audit fix --dry-run || true
+
+  dependency-review:
+    name: Dependency Review
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Dependency Review
+        uses: actions/dependency-review-action@v3
+        with:
+          fail-on-severity: moderate
+
+  code-format-check:
+    name: Code Format Check
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION_LATEST }}
+
+      - name: Check code formatting
+        run: |
+          echo "Checking code formatting..."
+          echo "Note: Add prettier or eslint configuration to enforce formatting"
+          # npm run format:check || echo "No format check script found"
+
+  lint-dockerfiles:
+    name: Lint Dockerfiles
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Lint Dockerfiles
+        uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: frontend/*/Dockerfile
+          recursive: true
+          ignore: DL3008,DL3009
+
+  # ==================== Build & Test Jobs ====================
+  # ==================== Build & Test Jobs ====================
+  # Client App (Fastie.Saigon Customer App - Port 3000)
+  client-app:
+    name: Client App CI
+    runs-on: ubuntu-latest
+    needs: [code-quality, security-audit, dependency-review, code-format-check, lint-dockerfiles]
+    if: github.event.inputs.skip_tests != 'true' && always()
+    defaults:
+      run:
+        working-directory: frontend/client
+
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: ['24.8.0']
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+          cache-dependency-path: frontend/client/package-lock.json
+
+      - name: Cache node_modules
+        uses: actions/cache@v3
+        with:
+          path: frontend/client/node_modules
+          key: ${{ runner.os }}-client-${{ matrix.node-version }}-${{ hashFiles('frontend/client/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-client-${{ matrix.node-version }}-
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run linter
+        run: npm run lint || echo "No lint script found"
+        continue-on-error: true
+
+      - name: Run tests (if available)
+        run: |
+          if npm run | grep -qE "^  test"; then
+            npm test -- --coverage --watchAll=false
+          else
+            echo "No test script defined, skipping tests."
+          fi
+        env:
+          CI: true
+
+      - name: Build application
+        run: npm run build
+        env:
+          CI: false
+          REACT_APP_BACKEND_URL: ${{ secrets.REACT_APP_BACKEND_URL || 'http://localhost:4000' }}
+          REACT_APP_STRIPE_PUBLISHABLE_KEY: ${{ secrets.REACT_APP_STRIPE_PUBLISHABLE_KEY }}
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: client-build-${{ matrix.node-version }}
+          path: frontend/client/.next
+          retention-days: 7
+
+      - name: Upload test coverage
+        if: ${{ hashFiles('frontend/client/coverage/**') != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: client-coverage-${{ matrix.node-version }}
+          path: frontend/client/coverage
+          retention-days: 7
+
+      - name: Upload coverage to Codecov
+        if: ${{ hashFiles('frontend/client/coverage/**') != '' }}
+        uses: codecov/codecov-action@v3
+        with:
+          files: ./frontend/client/coverage/lcov.info
+          flags: client-app-node-${{ matrix.node-version }}
+          name: client-app-coverage-${{ matrix.node-version }}
+          fail_ci_if_error: false
+
+  # Admin App (SuperAdmin Frontend - Port 3001) - Next.js App
+  admin-app:
+    name: Admin App CI (Next.js)
+    runs-on: ubuntu-latest
+    needs: [code-quality, security-audit, dependency-review, code-format-check, lint-dockerfiles]
+    if: github.event.inputs.skip_tests != 'true' && always()
+    defaults:
+      run:
+        working-directory: frontend/admin
+
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: ['24.8.0']
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+          cache-dependency-path: frontend/admin/package-lock.json
+
+      - name: Cache node_modules
+        uses: actions/cache@v3
+        with:
+          path: frontend/admin/node_modules
+          key: ${{ runner.os }}-admin-${{ matrix.node-version }}-${{ hashFiles('frontend/admin/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-admin-${{ matrix.node-version }}-
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run linter
+        run: npm run lint || echo "Linter completed"
+        continue-on-error: true
+
+      - name: Run tests
+        run: npm run test:ci
+        env:
+          CI: true
+
+      - name: Build Next.js application
+        run: npm run build
+        env:
+          CI: false
+          NEXT_PUBLIC_BACKEND_URL: ${{ secrets.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:4000' }}
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: admin-build-${{ matrix.node-version }}
+          path: frontend/admin/.next
+          retention-days: 7
+
+      - name: Upload test coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: admin-coverage-${{ matrix.node-version }}
+          path: frontend/admin/coverage
+          retention-days: 7
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v3
+        with:
+          files: ./frontend/admin/coverage/lcov.info
+          flags: admin-app-node-${{ matrix.node-version }}
+          name: admin-app-coverage-${{ matrix.node-version }}
+          fail_ci_if_error: false
+
+  # Restaurant App (Restaurant Admin Frontend - Port 3002)
+  restaurant-app:
+    name: Restaurant App CI
+    runs-on: ubuntu-latest
+    needs: [code-quality, security-audit, dependency-review, code-format-check, lint-dockerfiles]
+    if: github.event.inputs.skip_tests != 'true' && always()
+    defaults:
+      run:
+        working-directory: frontend/restaurant
+
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: ['24.8.0']
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+          cache-dependency-path: frontend/restaurant/package-lock.json
+
+      - name: Cache node_modules
+        uses: actions/cache@v3
+        with:
+          path: frontend/restaurant/node_modules
+          key: ${{ runner.os }}-restaurant-${{ matrix.node-version }}-${{ hashFiles('frontend/restaurant/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-restaurant-${{ matrix.node-version }}-
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run linter
+        run: npm run lint || echo "No lint script found"
+        continue-on-error: true
+
+      - name: Run tests (if available)
+        run: |
+          if npm run | grep -qE "^  test"; then
+            npm test -- --coverage --watchAll=false
+          else
+            echo "No test script defined, skipping tests."
+          fi
+        env:
+          CI: true
+
+      - name: Build application
+        run: npm run build
+        env:
+          CI: false
+          REACT_APP_BACKEND_URL: ${{ secrets.REACT_APP_BACKEND_URL || 'http://localhost:4000' }}
+          REACT_APP_STRIPE_PUBLISHABLE_KEY: ${{ secrets.REACT_APP_STRIPE_PUBLISHABLE_KEY }}
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: restaurant-build-${{ matrix.node-version }}
+          path: frontend/restaurant/.next
+          retention-days: 7
+
+      - name: Upload test coverage
+        if: ${{ hashFiles('frontend/restaurant/coverage/**') != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: restaurant-coverage-${{ matrix.node-version }}
+          path: frontend/restaurant/coverage
+          retention-days: 7
+
+      - name: Upload coverage to Codecov
+        if: ${{ hashFiles('frontend/restaurant/coverage/**') != '' }}
+        uses: codecov/codecov-action@v3
+        with:
+          files: ./frontend/restaurant/coverage/lcov.info
+          flags: restaurant-app-node-${{ matrix.node-version }}
+          name: restaurant-app-coverage-${{ matrix.node-version }}
+          fail_ci_if_error: false
+
+  # ==================== Performance & Bundle Size ====================
+  bundle-size-check:
+    name: Bundle Size Check
+    runs-on: ubuntu-latest
+    needs: [restaurant-app, admin-app, client-app]
+    if: github.event_name == 'pull_request'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION_LATEST }}
+
+      - name: Install and build Client App
+        working-directory: frontend/client
+        run: |
+          npm ci
+          npm run build
+        env:
+          CI: false
+        continue-on-error: true
+
+      - name: Install and build Admin App
+        working-directory: frontend/admin
+        run: |
+          npm ci
+          npm run build
+        env:
+          CI: false
+        continue-on-error: true
+
+      - name: Install and build Restaurant App
+        working-directory: frontend/restaurant
+        run: |
+          npm ci
+          npm run build
+        env:
+          CI: false
+        continue-on-error: true
+
+      - name: Analyze bundle sizes
+        run: |
+          echo "Bundle Size Analysis"
+          echo "======================="
+          for app in client admin restaurant; do
+            if [ -d "frontend/${app}/.next" ]; then
+              size=$(du -sh "frontend/${app}/.next" | cut -f1)
+              echo "$app: $size"
+            fi
+          done
+        continue-on-error: true
+
+      - name: Comment bundle size on PR
+        if: github.event_name == 'pull_request'
+        run: |
+          echo "Bundle sizes reported above"
+          echo "Consider adding bundle size comparison with main branch"
+        continue-on-error: true
+
+  # ==================== Docker Build (Optional) ====================
+  docker-build:
+    name: Docker Build & Scan
+    runs-on: ubuntu-latest
+    needs: [restaurant-app, admin-app, client-app]
+    if: ${{ always() && github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop') }}
+    env:
+      DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
+      DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
+
+    strategy:
+      matrix:
+        app: [client, admin, restaurant]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        if: ${{ github.event_name == 'push' && env.DOCKER_USERNAME != '' }}
+        uses: docker/login-action@v3
+        with:
+          username: ${{ env.DOCKER_USERNAME }}
+          password: ${{ env.DOCKER_PASSWORD }}
+        continue-on-error: true
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: |
+            ${{ env.DOCKER_USERNAME }}/frontend-${{ matrix.app }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,prefix={{branch}}-
+            type=raw,value=latest,enable={{is_default_branch}}
+          labels: |
+            org.opencontainers.image.title=CNPM Frontend ${{ matrix.app }}
+            org.opencontainers.image.description=Frontend app for CNPM Final Project
+
+      - name: Build Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./frontend/${{ matrix.app }}
+          push: false
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          load: true
+
+      - name: Scan Docker image for vulnerabilities
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.DOCKER_USERNAME }}/frontend-${{ matrix.app }}:latest
+          format: 'table'
+          exit-code: '0'
+          severity: 'CRITICAL,HIGH'
+        continue-on-error: true
+
+      # Uncomment to push to Docker Hub
+      # - name: Push Docker image
+      #   if: ${{ github.event_name == 'push' && env.DOCKER_USERNAME != '' }}
+      #   uses: docker/build-push-action@v5
+      #   with:
+      #     context: ./frontend/${{ matrix.app }}
+      #     push: true
+      #     tags: ${{ steps.meta.outputs.tags }}
+      #     labels: ${{ steps.meta.outputs.labels }}
+
+  # ==================== Notifications ====================
+  notify:
+    name: Send Notifications
+    runs-on: ubuntu-latest
+    needs: [bundle-size-check, docker-build]
+    if: always() && github.event_name == 'push'
+    env:
+      SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+    steps:
+      - name: Prepare notification message
+        id: message
+        run: |
+          all_success=true
+          if [ "${{ needs.client-app.result }}" != "success" ] || \
+             [ "${{ needs.admin-app.result }}" != "success" ] || \
+             [ "${{ needs.restaurant-app.result }}" != "success" ]; then
+            all_success=false
+          fi
+          
+          # Check bundle-size-check and docker-build if they ran
+          if [ "${{ needs.bundle-size-check.result }}" != "success" ] && [ "${{ needs.bundle-size-check.result }}" != "skipped" ]; then
+            all_success=false
+          fi
+          
+          if [ "${{ needs.docker-build.result }}" != "success" ] && [ "${{ needs.docker-build.result }}" != "skipped" ]; then
+            all_success=false
+          fi
+          
+          if [ "$all_success" = true ]; then
+            echo "status=SUCCESS" >> $GITHUB_OUTPUT
+            echo "color=good" >> $GITHUB_OUTPUT
+          else
+            echo "status=FAILED" >> $GITHUB_OUTPUT
+            echo "color=danger" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Send Slack notification
+        if: ${{ env.SLACK_WEBHOOK_URL != '' }}
+        uses: 8398a7/action-slack@v3
+        with:
+          status: custom
+          custom_payload: |
+            {
+              text: "${{ steps.message.outputs.status }} - Frontend CI Build",
+              attachments: [{
+                color: '${{ steps.message.outputs.color }}',
+                text: `Branch: ${process.env.GITHUB_REF}\nCommit: ${process.env.GITHUB_SHA.substring(0, 7)}\nAuthor: ${process.env.GITHUB_ACTOR}`
+              }]
+            }
+        continue-on-error: true
+

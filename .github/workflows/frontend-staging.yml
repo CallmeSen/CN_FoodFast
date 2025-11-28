@@ -1,0 +1,132 @@
+name: frontend-staging
+
+on:
+  workflow_run:
+    workflows:
+      - Fastie.Saigon Frontend CI/CD
+    types:
+      - completed
+
+jobs:
+  deploy-staging:
+    name: Frontend Staging Deployment
+    runs-on: ubuntu-latest
+    if: >
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: ./artifacts
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ github.event.workflow_run.id }}
+
+      - name: Display structure of downloaded files
+        run: ls -R ./artifacts
+
+      - name: Verify artifacts
+        run: |
+          echo "Verifying downloaded artifacts..."
+          if [ -d "./artifacts/client-build" ]; then
+            echo "✓ Client app build found"
+            ls -lh ./artifacts/client-build
+          else
+            echo "✗ Client app build not found"
+          fi
+          
+          if [ -d "./artifacts/admin-build" ]; then
+            echo "✓ Admin app build found"
+            ls -lh ./artifacts/admin-build
+          else
+            echo "✗ Admin app build not found"
+          fi
+          
+          if [ -d "./artifacts/restaurant-build" ]; then
+            echo "✓ Restaurant app build found"
+            ls -lh ./artifacts/restaurant-build
+          else
+            echo "✗ Restaurant app build not found"
+          fi
+
+      - name: Deploy to staging environment
+        run: |
+          echo "================================================"
+          echo "  Deploying to Staging Environment"
+          echo "================================================"
+          echo ""
+          echo "📦 Available builds:"
+          echo "  - Client App"
+          echo "  - Admin App"
+          echo "  - Restaurant App"
+          echo ""
+          echo "🚀 Deployment target: Staging Server"
+          echo "🌍 Environment: staging"
+          echo ""
+          echo "⚠️  Note: Add your actual deployment commands below"
+          echo "  Examples:"
+          echo "    - Deploy to Netlify"
+          echo "    - Deploy to Vercel"
+          echo "    - Deploy to AWS S3 + CloudFront"
+          echo "    - Deploy to Azure Static Web Apps"
+          echo "    - Deploy to your own server via SSH/FTP"
+          echo ""
+          echo "================================================"
+          
+          # Example deployment commands (uncomment and modify as needed):
+          
+          # Deploy to Netlify
+          # npm install -g netlify-cli
+          # netlify deploy --prod --dir=./artifacts/client-build --site=${{ secrets.NETLIFY_SITE_ID }} --auth=${{ secrets.NETLIFY_AUTH_TOKEN }}
+          
+          # Deploy to Vercel
+          # npm install -g vercel
+          # vercel --prod --token=${{ secrets.VERCEL_TOKEN }} ./artifacts/client-build
+          
+          # Deploy to AWS S3
+          # aws s3 sync ./artifacts/client-build s3://${{ secrets.S3_BUCKET }}/client --delete
+          # aws s3 sync ./artifacts/admin-build s3://${{ secrets.S3_BUCKET }}/admin --delete
+          # aws s3 sync ./artifacts/restaurant-build s3://${{ secrets.S3_BUCKET }}/restaurant --delete
+          
+          # Deploy via SSH
+          # sshpass -p ${{ secrets.SSH_PASSWORD }} scp -r ./artifacts/* user@server:/var/www/staging/
+
+      - name: Run smoke tests
+        run: |
+          echo "🧪 Running smoke tests on staging environment..."
+          echo "  - Testing client app health endpoint"
+          echo "  - Testing admin app health endpoint"
+          echo "  - Testing restaurant app health endpoint"
+          echo ""
+          echo "⚠️  Note: Add your actual smoke test commands here"
+          
+          # Example smoke tests:
+          # curl -f https://staging-client.yourdomain.com/health || exit 1
+          # curl -f https://staging-admin.yourdomain.com/health || exit 1
+          # curl -f https://staging-restaurant.yourdomain.com/health || exit 1
+
+      - name: Notify deployment status
+        if: always()
+        run: |
+          if [ "${{ job.status }}" == "success" ]; then
+            echo "✅ Staging deployment completed successfully!"
+            echo "🌐 Staging URLs:"
+            echo "  - Client: https://staging-client.yourdomain.com"
+            echo "  - Admin: https://staging-admin.yourdomain.com"
+            echo "  - Restaurant: https://staging-restaurant.yourdomain.com"
+          else
+            echo "❌ Staging deployment failed!"
+            echo "Please check the logs above for details."
+          fi
+          
+          # Optional: Send notification to Slack/Discord/Email
+          # curl -X POST ${{ secrets.SLACK_WEBHOOK_URL }} \
+          #   -H 'Content-Type: application/json' \
+          #   -d '{"text":"Staging deployment ${{ job.status }}"}'

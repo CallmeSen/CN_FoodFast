@@ -103,10 +103,20 @@ jobs:
           
           Write-Host "Pushing logs to Grafana Loki..." -ForegroundColor Cyan
           
-          $logContent = Get-Content $logFile -Raw -ErrorAction SilentlyContinue
-          if (-not $logContent) {
+          $fullContent = Get-Content $logFile -Raw -ErrorAction SilentlyContinue
+          if (-not $fullContent) {
             Write-Host "Log file is empty" -ForegroundColor Yellow
             exit 0
+          }
+          
+          # Extract only summary section (from "Test Suites:" to end) to avoid OutOfMemoryException
+          $summaryMatch = [regex]::Match($fullContent, '(?s)(Test Suites:.*)')
+          if ($summaryMatch.Success) {
+            $logContent = $summaryMatch.Value
+            Write-Host "Extracted test summary for Loki push" -ForegroundColor Green
+          } else {
+            $logContent = "No test summary found in log file"
+            Write-Host "Warning: Could not find test summary" -ForegroundColor Yellow
           }
           
           $timestamp = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds() * 1000000

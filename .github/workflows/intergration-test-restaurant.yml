@@ -151,7 +151,7 @@ jobs:
           $headers["Authorization"] = "Basic $auth"
           
           try {
-            $response = Invoke-RestMethod -Uri "${env:LOKI_URL}/loki/api/v1/push" -Method Post -Headers $headers -Body $payload
+            $response = Invoke-RestMethod -Uri "${env:LOKI_URL}" -Method Post -Headers $headers -Body $payload
             Write-Host "Logs pushed to Loki successfully!" -ForegroundColor Green
           } catch {
             Write-Host "Failed to push logs to Loki: $_" -ForegroundColor Red

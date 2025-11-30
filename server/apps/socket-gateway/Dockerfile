@@ -2,10 +2,15 @@ FROM node:20-alpine
 
 WORKDIR /app
 
-COPY package*.json ./
+# Copy package files from service directory
+COPY ./apps/socket-gateway/package*.json ./
 RUN apk add --no-cache curl && npm install
 
-COPY . .
+# Copy service source code
+COPY ./apps/socket-gateway/ ./
+
+# Copy shared libs
+COPY ./libs ./libs
 
 EXPOSE 4000
 

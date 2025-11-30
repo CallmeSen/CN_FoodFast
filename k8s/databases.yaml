@@ -1,0 +1,328 @@
+# User Database
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: userdb
+  namespace: foodfast
+  labels:
+    app: userdb
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: userdb
+  template:
+    metadata:
+      labels:
+        app: userdb
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:15
+          ports:
+            - containerPort: 5432
+          env:
+            - name: POSTGRES_USER
+              value: "postgres"
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: foodfast-secrets
+                  key: DB_PASSWORD
+            - name: POSTGRES_DB
+              value: "userdb"
+          volumeMounts:
+            - name: userdb-storage
+              mountPath: /var/lib/postgresql/data
+            - name: init-script
+              mountPath: /docker-entrypoint-initdb.d
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          livenessProbe:
+            exec:
+              command:
+                - pg_isready
+                - -U
+                - postgres
+                - -d
+                - userdb
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          readinessProbe:
+            exec:
+              command:
+                - pg_isready
+                - -U
+                - postgres
+                - -d
+                - userdb
+            initialDelaySeconds: 5
+            periodSeconds: 5
+      volumes:
+        - name: userdb-storage
+          persistentVolumeClaim:
+            claimName: userdb-pvc
+        - name: init-script
+          configMap:
+            name: userdb-init
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: userdb
+  namespace: foodfast
+spec:
+  selector:
+    app: userdb
+  ports:
+    - port: 5432
+      targetPort: 5432
+  type: ClusterIP
+---
+# Product Database
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: productdb
+  namespace: foodfast
+  labels:
+    app: productdb
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: productdb
+  template:
+    metadata:
+      labels:
+        app: productdb
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:15
+          ports:
+            - containerPort: 5432
+          env:
+            - name: POSTGRES_USER
+              value: "postgres"
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: foodfast-secrets
+                  key: DB_PASSWORD
+            - name: POSTGRES_DB
+              value: "productdb"
+          volumeMounts:
+            - name: productdb-storage
+              mountPath: /var/lib/postgresql/data
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          livenessProbe:
+            exec:
+              command:
+                - pg_isready
+                - -U
+                - postgres
+                - -d
+                - productdb
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          readinessProbe:
+            exec:
+              command:
+                - pg_isready
+                - -U
+                - postgres
+                - -d
+                - productdb
+            initialDelaySeconds: 5
+            periodSeconds: 5
+      volumes:
+        - name: productdb-storage
+          persistentVolumeClaim:
+            claimName: productdb-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: productdb
+  namespace: foodfast
+spec:
+  selector:
+    app: productdb
+  ports:
+    - port: 5432
+      targetPort: 5432
+  type: ClusterIP
+---
+# Order Database
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: orderdb
+  namespace: foodfast
+  labels:
+    app: orderdb
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: orderdb
+  template:
+    metadata:
+      labels:
+        app: orderdb
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:15
+          ports:
+            - containerPort: 5432
+          env:
+            - name: POSTGRES_USER
+              value: "postgres"
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: foodfast-secrets
+                  key: DB_PASSWORD
+            - name: POSTGRES_DB
+              value: "orderdb"
+          volumeMounts:
+            - name: orderdb-storage
+              mountPath: /var/lib/postgresql/data
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          livenessProbe:
+            exec:
+              command:
+                - pg_isready
+                - -U
+                - postgres
+                - -d
+                - orderdb
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          readinessProbe:
+            exec:
+              command:
+                - pg_isready
+                - -U
+                - postgres
+                - -d
+                - orderdb
+            initialDelaySeconds: 5
+            periodSeconds: 5
+      volumes:
+        - name: orderdb-storage
+          persistentVolumeClaim:
+            claimName: orderdb-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: orderdb
+  namespace: foodfast
+spec:
+  selector:
+    app: orderdb
+  ports:
+    - port: 5432
+      targetPort: 5432
+  type: ClusterIP
+---
+# Payment Database
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: paymentdb
+  namespace: foodfast
+  labels:
+    app: paymentdb
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: paymentdb
+  template:
+    metadata:
+      labels:
+        app: paymentdb
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:15
+          ports:
+            - containerPort: 5432
+          env:
+            - name: POSTGRES_USER
+              value: "postgres"
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: foodfast-secrets
+                  key: DB_PASSWORD
+            - name: POSTGRES_DB
+              value: "paymentdb"
+          volumeMounts:
+            - name: paymentdb-storage
+              mountPath: /var/lib/postgresql/data
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          livenessProbe:
+            exec:
+              command:
+                - pg_isready
+                - -U
+                - postgres
+                - -d
+                - paymentdb
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          readinessProbe:
+            exec:
+              command:
+                - pg_isready
+                - -U
+                - postgres
+                - -d
+                - paymentdb
+            initialDelaySeconds: 5
+            periodSeconds: 5
+      volumes:
+        - name: paymentdb-storage
+          persistentVolumeClaim:
+            claimName: paymentdb-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: paymentdb
+  namespace: foodfast
+spec:
+  selector:
+    app: paymentdb
+  ports:
+    - port: 5432
+      targetPort: 5432
+  type: ClusterIP

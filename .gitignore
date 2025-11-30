@@ -48,3 +48,4 @@ coverage/
 
 # Docker
 *.pid
+k8s/secrets.yaml

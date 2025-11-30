@@ -13,6 +13,7 @@
   "license": "ISC",
   "dependencies": {
     "amqplib": "^0.10.9",
+    "prom-client": "^15.1.0",
     "axios": "^1.4.0",
     "compression": "^1.8.1",
     "cors": "^2.8.5",

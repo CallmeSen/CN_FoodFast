@@ -1,11 +1,11 @@
-name: CD Pipeline - Docker Desktop K8s
+name: CD Pipeline - Docker Compose
 
 on:
   push:
     branches:
-      - main
+      - source
     paths:
-      - "infra/k8s/**"
+      - "server/**"
       - ".github/workflows/deploy-k8s.yml"
   pull_request:
     branches:
@@ -13,25 +13,17 @@ on:
 
   release:
     types: [published]
-  # workflow_dispatch:
-    # inputs:
-      # environment:
-      #   description: "Deployment environment"
-      #   required: false
-      #   default: "production"
-      #   type: choice
-      #   options:
-      #     - staging
+
   workflow_run:
     workflows: ["backend-ci", "frontend-ci"]
     types:
       - completed
     branches:
-      - main  #
+      - main
 
 jobs:
   build-and-deploy:
-    runs-on: self-hosted # Chạy trên máy local với Docker Desktop
+    runs-on: self-hosted
 
     steps:
       - name: Clean temp directory
@@ -40,177 +32,67 @@ jobs:
           if (Test-Path "$env:RUNNER_TEMP") {
             Get-ChildItem -Path "$env:RUNNER_TEMP" -Force -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
           }
-          $workDir = "E:\GitHub\actions-runner\_work\_temp"
-          if (Test-Path $workDir) {
-            Get-ChildItem -Path $workDir -Force -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
-          }
           echo "✓ Temp cleanup completed"
         continue-on-error: true
 
       - name: Checkout code
         uses: actions/checkout@v3
 
-      # 1️⃣ Đăng nhập vào DockerHub
       - name: Login to DockerHub
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
-      # 3️⃣ Verify Docker Desktop Kubernetes
-      - name: Check Kubernetes context
+      - name: Build and Deploy with Docker Compose
+        shell: powershell
+        working-directory: server
         run: |
-          kubectl config current-context
-          kubectl cluster-info
-          kubectl get nodes
+          Write-Host "Building and deploying services..." -ForegroundColor Cyan
+          
+          # Stop existing containers
+          docker-compose down --remove-orphans 2>$null
+          
+          # Build and start all services
+          docker-compose up -d --build
+          
+          Write-Host "Waiting for services to be healthy..." -ForegroundColor Yellow
+          Start-Sleep -Seconds 30
+          
+          # Check service health
+          docker-compose ps
+          
+          Write-Host "Deployment completed!" -ForegroundColor Green
 
-      # 4️⃣ Deploy to Docker Desktop Kubernetes
-      - name: Prepare Namespace and Base Resources
+      - name: Health Check
+        shell: powershell
         run: |
-          # Apply base resources
-          kubectl apply -f infra/k8s/namespace.yaml
-          kubectl apply -f infra/k8s/pvcs.yaml
+          Write-Host "Checking service health..." -ForegroundColor Cyan
+          
+          $services = @(
+            @{Name="API Gateway"; Port=8743},
+            @{Name="User Service"; Port=3001},
+            @{Name="Product Service"; Port=3002},
+            @{Name="Order Service"; Port=3003},
+            @{Name="Payment Service"; Port=3004},
+            @{Name="Email Service"; Port=3005},
+            @{Name="Socket Gateway"; Port=4000}
+          )
+          
+          foreach ($service in $services) {
+            try {
+              $response = Invoke-WebRequest -Uri "http://localhost:$($service.Port)/health" -UseBasicParsing -TimeoutSec 5
+              if ($response.StatusCode -eq 200) {
+                Write-Host "✓ $($service.Name) is healthy" -ForegroundColor Green
+              }
+            } catch {
+              Write-Host "✗ $($service.Name) health check failed" -ForegroundColor Red
+            }
+          }
 
-      - name: Deploy MongoDB Services
+      - name: Show running containers
+        shell: powershell
+        working-directory: server
         run: |
-          # Deploy MongoDB instances
-          kubectl apply -f infra/k8s/auth-service-mongo.yaml
-          kubectl apply -f infra/k8s/restaurant-service-mongo.yaml
-          kubectl apply -f infra/k8s/order-service-mongo.yaml
-          kubectl apply -f infra/k8s/payment-service-mongo.yaml
-
-          echo "Waiting for MongoDB StatefulSets to be ready (may take 2-3 minutes)..."
-          Start-Sleep -Seconds 20
-
-          # Wait for StatefulSets (not pods directly)
-          kubectl rollout status statefulset/mongodb-auth -n cnpm-food-delivery --timeout=5m
-          if ($LASTEXITCODE -ne 0) { echo "Warning: Auth MongoDB timeout, continuing..." }
-
-          kubectl rollout status statefulset/mongodb-restaurant -n cnpm-food-delivery --timeout=5m
-          if ($LASTEXITCODE -ne 0) { echo "Warning: Restaurant MongoDB timeout, continuing..." }
-
-          kubectl rollout status statefulset/mongodb-order -n cnpm-food-delivery --timeout=5m
-          if ($LASTEXITCODE -ne 0) { echo "Warning: Order MongoDB timeout, continuing..." }
-
-          kubectl rollout status statefulset/mongodb-payment -n cnpm-food-delivery --timeout=5m
-          if ($LASTEXITCODE -ne 0) { echo "Warning: Payment MongoDB timeout, continuing..." }
-
-          echo "MongoDB deployment completed!"
-        continue-on-error: true
-
-      - name: Deploy Backend Microservices
-        run: |
-          Start-Sleep -Seconds 10
-
-          # Deploy new backend services
-          kubectl apply -f infra/k8s/auth-service-deployment.yaml
-          kubectl apply -f infra/k8s/auth-service-service.yaml
-          kubectl apply -f infra/k8s/restaurant-service-deployment.yaml
-          kubectl apply -f infra/k8s/restaurant-service-service.yaml
-          kubectl apply -f infra/k8s/order-service-deployment.yaml
-          kubectl apply -f infra/k8s/order-service-service.yaml
-          kubectl apply -f infra/k8s/payment-service-deployment.yaml
-          kubectl apply -f infra/k8s/payment-service-service.yaml
-
-      - name: Deploy Frontend Apps
-        run: |
-          Start-Sleep -Seconds 10
-
-          # Deploy new frontends
-          kubectl apply -f infra/k8s/client-frontend-deployment.yaml
-          kubectl apply -f infra/k8s/client-frontend-service.yaml
-          kubectl apply -f infra/k8s/admin-frontend-deployment.yaml
-          kubectl apply -f infra/k8s/admin-frontend-service.yaml
-          kubectl apply -f infra/k8s/restaurant-frontend-deployment.yaml
-          kubectl apply -f infra/k8s/restaurant-frontend-service.yaml
-
-      - name: Deploy Nginx Gateway
-        run: |
-          kubectl apply -f infra/k8s/nginx-configmap.yaml
-          kubectl apply -f infra/k8s/nginx-deployment.yaml
-          kubectl apply -f infra/k8s/nginx-service.yaml
-
-      - name: Wait for deployments to be ready
-        run: |
-          echo "Waiting for services to be ready (this may take 2-3 minutes)..."
-
-          kubectl rollout status deployment/auth-service -n cnpm-food-delivery --timeout=5m
-          if ($LASTEXITCODE -ne 0) { echo "Warning: Auth service timeout" }
-
-          kubectl rollout status deployment/restaurant-service -n cnpm-food-delivery --timeout=5m
-          if ($LASTEXITCODE -ne 0) { echo "Warning: Restaurant service timeout" }
-
-          kubectl rollout status deployment/order-service -n cnpm-food-delivery --timeout=5m
-          if ($LASTEXITCODE -ne 0) { echo "Warning: Order service timeout" }
-
-          kubectl rollout status deployment/payment-service -n cnpm-food-delivery --timeout=5m
-          if ($LASTEXITCODE -ne 0) { echo "Warning: Payment service timeout" }
-
-          kubectl rollout status deployment/client-frontend -n cnpm-food-delivery --timeout=5m
-          if ($LASTEXITCODE -ne 0) { echo "Warning: Client frontend timeout" }
-
-          kubectl rollout status deployment/admin-frontend -n cnpm-food-delivery --timeout=5m
-          if ($LASTEXITCODE -ne 0) { echo "Warning: Admin frontend timeout" }
-
-          kubectl rollout status deployment/restaurant-frontend -n cnpm-food-delivery --timeout=5m
-          if ($LASTEXITCODE -ne 0) { echo "Warning: Restaurant frontend timeout" }
-
-          kubectl rollout status deployment/nginx-gateway -n cnpm-food-delivery --timeout=5m
-          if ($LASTEXITCODE -ne 0) { echo "Warning: Nginx timeout" }
-
-          echo "Deployment rollout completed!"
-        continue-on-error: true
-
-      # # 5️⃣ Deploy Monitoring Stack
-      # - name: Deploy Monitoring Stack
-      #   run: |
-      #     # Delete existing monitoring stack if exists
-      #     kubectl delete namespace monitoring --ignore-not-found=true
-      #     Start-Sleep -Seconds 10
-
-      #     echo "Deploying Prometheus, Grafana, and Loki..."
-      #     kubectl apply -f infra/k8s/monitoring/namespace.yaml
-
-      #     # Deploy Prometheus
-      #     kubectl apply -f infra/k8s/monitoring/prometheus.yaml
-
-      #     # Deploy Grafana
-      #     kubectl apply -f infra/k8s/monitoring/grafana.yaml
-
-      #     # Deploy Loki & Promtail
-      #     kubectl apply -f infra/k8s/monitoring/loki.yaml
-
-      #     echo "Waiting for monitoring stack to be ready..."
-      #     Start-Sleep -Seconds 20
-
-      #     kubectl rollout status deployment/prometheus -n cnpm-food-delivery --timeout=3m
-      #     if ($LASTEXITCODE -ne 0) { echo "Warning: Prometheus timeout" }
-
-      #     kubectl rollout status deployment/grafana -n cnpm-food-delivery --timeout=3m
-      #     if ($LASTEXITCODE -ne 0) { echo "Warning: Grafana timeout" }
-
-      #     kubectl rollout status deployment/loki -n cnpm-food-delivery --timeout=3m
-      #     if ($LASTEXITCODE -ne 0) { echo "Warning: Loki timeout" }
-
-      #     echo "Monitoring stack deployed!"
-      #   continue-on-error: true
-
-      # # 5️⃣ Deploy jobs, cronjobs if any
-      # - name: Deploy Jobs and CronJobs
-      #   run: |
-      #     kubectl apply -f infra/k8s/jobs/
-      #     start-sleep -Seconds 10
-      #     echo "Jobs and CronJobs deployment completed!"
-
-      # 6️⃣ Verify deployment !
-      - name: Verify Deployment
-        run: |
-          echo "=== All Pods (App + Monitoring) ==="
-          kubectl get pods -n cnpm-food-delivery
-          echo ""
-          echo "=== All Services (App + Monitoring) ==="
-          kubectl get svc -n cnpm-food-delivery
-          echo ""
-          echo "=== All Deployments ==="
-          kubectl get deployments -n cnpm-food-delivery
-          echo ""
+          docker-compose ps
+          docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"

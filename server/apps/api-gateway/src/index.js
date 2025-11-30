@@ -7,6 +7,7 @@ const config = require('./config');
 const requestId = require('./middlewares/requestId');
 const errorHandler = require('./middlewares/errorHandler');
 const health = require('./health');
+const { setupMetrics, recordError } = require('../libs/common/metrics');
 
 const customersRoutes = require('./routes/customers.routes');
 const restaurantsRoutes = require('./routes/restaurants.routes');
@@ -16,6 +17,10 @@ const ownerOrderRoutes = require('./routes/orders.owner.routes');
 const adminOrderRoutes = require('./routes/orders.admin.routes');
 
 const app = express();
+
+// Setup Prometheus metrics
+setupMetrics(app, 'api-gateway');
+
 app.use(bodyParser.json({ limit: '25mb' }));
 app.use((req, res, next) => {
   const origin = req.headers.origin || '*';

@@ -4,12 +4,16 @@ const morgan = require('morgan');
 const config = require('./config');
 const { connectRabbitMQ } = require('./utils/rabbitmq');
 const roleRepository = require('./repositories/role.repository');
+const { setupMetrics, recordUserAuth, recordError } = require('../libs/common/metrics');
 
 const customerRoutes = require('./routes/customer.routes');
 const restaurantRoutes = require('./routes/restaurant.routes');
 const adminRoutes = require('./routes/admin.routes');
 
 const app = express();
+
+// Setup Prometheus metrics
+setupMetrics(app, 'user-service');
 
 app.use(express.json({ limit: '2mb' }));
 // app.use(morgan('dev'));

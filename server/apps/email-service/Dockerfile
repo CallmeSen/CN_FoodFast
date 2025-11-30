@@ -7,16 +7,20 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         python3 \
         build-essential \
+        curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy file package.json
-COPY package*.json ./
+# Copy file package.json from service directory
+COPY ./apps/email-service/package*.json ./
 
 # Cài đặt dependencies
 RUN npm install
 
-# Copy toàn bộ code
-COPY . .
+# Copy service source code
+COPY ./apps/email-service/ ./
+
+# Copy shared libs
+COPY ./libs ./libs
 
 # Biến môi trường production
 ENV NODE_ENV=production
@@ -25,7 +29,7 @@ ENV NODE_ENV=production
 EXPOSE 3005
 
 # Cho phép script entrypoint chạy
-COPY entrypoint.sh /entrypoint.sh
+COPY ./apps/email-service/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
 ENTRYPOINT ["/entrypoint.sh"]

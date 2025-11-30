@@ -5,10 +5,14 @@
   "scripts": {
     "start": "node src/index.js",
     "dev": "nodemon src/index.js",
-    "test": "jest --runInBand"
+    "test": "jest --runInBand",
+    "test:integration": "jest --config jest.integration.config.js",
+    "test:integration:watch": "jest --config jest.integration.config.js --watch",
+    "test:coverage": "jest --config jest.integration.config.js --coverage"
   },
   "dependencies": {
     "amqplib": "^0.10.9",
+    "prom-client": "^15.1.0",
     "bcrypt": "^6.0.0",
     "bcryptjs": "^3.0.2",
     "dotenv": "^16.x",
@@ -20,6 +24,7 @@
   },
   "devDependencies": {
     "jest": "^29.x",
-    "nodemon": "^2.x"
+    "nodemon": "^2.x",
+    "supertest": "^6.3.3"
   }
 }

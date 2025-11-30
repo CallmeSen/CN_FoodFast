@@ -1,9 +1,9 @@
-version: "3.9"
-
 services:
   # API Gateway
   api-gateway:
-    build: ./apps/api-gateway
+    build:
+      context: .
+      dockerfile: ./apps/api-gateway/Dockerfile
     env_file: ./apps/api-gateway/.env
     ports:
       - "8743:8743"
@@ -23,7 +23,9 @@ services:
 
   # User Service
   user-service:
-    build: ./apps/user-service
+    build:
+      context: .
+      dockerfile: ./apps/user-service/Dockerfile
     env_file: ./apps/user-service/.env
     ports:
       - "3001:3001"
@@ -41,7 +43,9 @@ services:
       retries: 5
 
   product-service:
-    build: ./apps/product-service
+    build:
+      context: .
+      dockerfile: ./apps/product-service/Dockerfile
     env_file: ./apps/product-service/.env
     ports:
       - "3002:3002"
@@ -61,7 +65,9 @@ services:
 
   # Order Service
   order-service:
-    build: ./apps/order-service
+    build:
+      context: .
+      dockerfile: ./apps/order-service/Dockerfile
     env_file: ./apps/order-service/.env
     ports:
       - "3003:3003"
@@ -81,7 +87,9 @@ services:
 
   # Payment Service
   payment-service:
-    build: ./apps/payment-service
+    build:
+      context: .
+      dockerfile: ./apps/payment-service/Dockerfile
     env_file: ./apps/payment-service/.env
     ports:
       - "3004:3004"
@@ -100,7 +108,9 @@ services:
   
     # Email Service
   email-service:
-    build: ./apps/email-service
+    build:
+      context: .
+      dockerfile: ./apps/email-service/Dockerfile
     env_file: ./apps/email-service/.env
     ports:
       - "3005:3005"
@@ -117,7 +127,9 @@ services:
   
     # Socket Gateway (WebSocket Realtime)
   socket-gateway:
-    build: ./apps/socket-gateway
+    build:
+      context: .
+      dockerfile: ./apps/socket-gateway/Dockerfile
     env_file: ./apps/socket-gateway/.env
     ports:
       - "4000:4000"

@@ -3,7 +3,7 @@ name: backend-staging
 on:
   workflow_run:
     workflows:
-      - Backend CI (Full)
+      - backend-ci
     types:
       - completed
 
@@ -35,8 +35,12 @@ jobs:
       - name: Deploy backend services to staging
         run: |
           echo "[deploy] Backend services ready for staging rollout"
-          echo "[deploy] Auth service artifact present"
+          echo "[deploy] API Gateway artifact present"
+          echo "[deploy] User service artifact present"
+          echo "[deploy] Product service artifact present"
           echo "[deploy] Order service artifact present"
           echo "[deploy] Payment service artifact present"
-          echo "[deploy] Restaurant service artifact present"
+          echo "[deploy] Email service artifact present"
+          echo "[deploy] Socket Gateway artifact present"
+          echo "[deploy] Delivery service artifact present"
           # TODO: replace with staging deployment commands (e.g., kubectl, helm, SSH, etc.)

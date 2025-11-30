@@ -3,10 +3,15 @@ import { Server } from "socket.io";
 import http from "http";
 import dotenv from "dotenv";
 import { connectRabbitMQ } from "./rabbitmq.js";
+import { setupMetrics, setWsConnections } from "../libs/common/metrics.mjs";
 
 dotenv.config();
 
 const app = express();
+
+// Setup Prometheus metrics
+setupMetrics(app, 'socket-gateway');
+
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
@@ -16,6 +21,9 @@ const io = new Server(server, {
 
 const PORT = process.env.PORT || 4000;
 
+// Track WebSocket connections
+let connectionCount = 0;
+
 function normaliseId(value) {
   if (!value) return null;
   if (Array.isArray(value)) return normaliseId(value[0]);
@@ -24,7 +32,9 @@ function normaliseId(value) {
 }
 
 io.on("connection", (socket) => {
-  console.log(`[socket-gateway] client connected: ${socket.id}`);
+  connectionCount++;
+  setWsConnections('socket-gateway', connectionCount);
+  console.log(`[socket-gateway] client connected: ${socket.id} (total: ${connectionCount})`);
 
   const role = normaliseId(socket.handshake?.query?.role)?.toLowerCase();
   const ownerId = normaliseId(socket.handshake?.query?.ownerId);
@@ -64,7 +74,9 @@ io.on("connection", (socket) => {
   });
 
   socket.on("disconnect", () => {
-    console.log(`[socket-gateway] client disconnected: ${socket.id}`);
+    connectionCount--;
+    setWsConnections('socket-gateway', connectionCount);
+    console.log(`[socket-gateway] client disconnected: ${socket.id} (total: ${connectionCount})`);
   });
 });
 

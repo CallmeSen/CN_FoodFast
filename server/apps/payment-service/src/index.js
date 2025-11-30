@@ -7,8 +7,13 @@ const requireRoles = require('./middlewares/authorize');
 const customerPaymentRoutes = require('./routes/payments.customer.routes');
 const adminPaymentRoutes = require('./routes/payments.admin.routes');
 const { startOrderConsumer } = require('./consumers/order.consumer');
+const { setupMetrics, recordPayment, recordError } = require('../libs/common/metrics');
 
 const app = express();
+
+// Setup Prometheus metrics
+setupMetrics(app, 'payment-service');
+
 app.use(express.json());
 app.use(morgan('dev'));
 

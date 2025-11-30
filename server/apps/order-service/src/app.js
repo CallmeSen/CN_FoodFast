@@ -6,8 +6,12 @@ const requireRoles = require('./middleware/authorize');
 const customerOrderRoutes = require('./routes/orders.customer.routes');
 const ownerOrderRoutes = require('./routes/orders.owner.routes');
 const adminOrderRoutes = require('./routes/orders.admin.routes');
+const { setupMetrics, recordOrder, recordError } = require('../libs/common/metrics');
 
 const app = express();
+
+// Setup Prometheus metrics
+setupMetrics(app, 'order-service');
 
 app.use(express.json({ limit: '2mb' }));
 app.use(morgan('dev'));

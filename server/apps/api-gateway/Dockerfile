@@ -4,14 +4,19 @@ FROM node:20-alpine
 
 WORKDIR /app
 
-COPY package*.json ./
+# Copy package files from service directory
+COPY ./apps/api-gateway/package*.json ./
 
 RUN apk add --no-cache curl \
-    && npm ci --only=production
+    && npm install --omit=dev
 
-COPY . .
+# Copy service source code
+COPY ./apps/api-gateway/ ./
 
-COPY entrypoint.sh /entrypoint.sh
+# Copy shared libs
+COPY ./libs ./libs
+
+COPY ./apps/api-gateway/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
 EXPOSE 8080

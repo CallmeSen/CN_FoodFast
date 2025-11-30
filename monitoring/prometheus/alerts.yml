@@ -1,0 +1,176 @@
+groups:
+  - name: endpoint_alerts
+    rules:
+      # ============================================
+      # ENDPOINT AVAILABILITY ALERTS
+      # ============================================
+      - alert: EndpointDown
+        expr: probe_success == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Endpoint {{ $labels.instance }} is down"
+          description: "{{ $labels.service }} endpoint {{ $labels.endpoint }} has been down for more than 1 minute."
+
+      - alert: EndpointSlowResponse
+        expr: probe_http_duration_seconds > 2
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Endpoint {{ $labels.instance }} is slow"
+          description: "{{ $labels.service }} endpoint {{ $labels.endpoint }} response time is above 2 seconds."
+
+      - alert: EndpointHighLatency
+        expr: probe_http_duration_seconds > 5
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Endpoint {{ $labels.instance }} has high latency"
+          description: "{{ $labels.service }} endpoint {{ $labels.endpoint }} response time is above 5 seconds."
+
+      # ============================================
+      # SSL CERTIFICATE ALERTS
+      # ============================================
+      - alert: SSLCertificateExpiringSoon
+        expr: probe_ssl_earliest_cert_expiry - time() < 86400 * 30
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "SSL certificate expiring soon for {{ $labels.instance }}"
+          description: "SSL certificate will expire in less than 30 days."
+
+      - alert: SSLCertificateExpired
+        expr: probe_ssl_earliest_cert_expiry - time() < 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "SSL certificate expired for {{ $labels.instance }}"
+          description: "SSL certificate has expired!"
+
+  - name: service_alerts
+    rules:
+      # ============================================
+      # SERVICE HEALTH ALERTS
+      # ============================================
+      - alert: APIGatewayDown
+        expr: probe_success{service="api-gateway", endpoint="health"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "API Gateway is down"
+          description: "API Gateway health check has been failing for more than 1 minute."
+
+      - alert: UserServiceDown
+        expr: probe_success{service="user-service"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "User Service is down"
+          description: "User Service has been down for more than 1 minute."
+
+      - alert: ProductServiceDown
+        expr: probe_success{service="product-service"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Product Service is down"
+          description: "Product Service has been down for more than 1 minute."
+
+      - alert: OrderServiceDown
+        expr: probe_success{service="order-service"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Order Service is down"
+          description: "Order Service has been down for more than 1 minute."
+
+      - alert: PaymentServiceDown
+        expr: probe_success{service="payment-service"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Payment Service is down"
+          description: "Payment Service has been down for more than 1 minute. This is critical for business!"
+
+      - alert: RabbitMQDown
+        expr: probe_success{service="rabbitmq"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "RabbitMQ is down"
+          description: "RabbitMQ message broker has been down for more than 1 minute."
+
+  - name: category_alerts
+    rules:
+      # ============================================
+      # CATEGORY-BASED ALERTS
+      # ============================================
+      - alert: CustomerAuthEndpointsDown
+        expr: count(probe_success{category="customer"} == 0) > 0
+        for: 2m
+        labels:
+          severity: high
+        annotations:
+          summary: "Customer authentication endpoints are failing"
+          description: "One or more customer authentication endpoints are down."
+
+      - alert: RestaurantEndpointsDown
+        expr: count(probe_success{category="restaurant"} == 0) > 0
+        for: 2m
+        labels:
+          severity: high
+        annotations:
+          summary: "Restaurant endpoints are failing"
+          description: "One or more restaurant endpoints are down."
+
+      - alert: OrderEndpointsDown
+        expr: count(probe_success{category="order"} == 0) > 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Order endpoints are failing"
+          description: "One or more order endpoints are down. This affects order processing!"
+
+      - alert: AdminEndpointsDown
+        expr: count(probe_success{category="admin"} == 0) > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Admin endpoints are failing"
+          description: "One or more admin endpoints are down."
+
+  - name: performance_alerts
+    rules:
+      # ============================================
+      # PERFORMANCE ALERTS
+      # ============================================
+      - alert: HighErrorRate
+        expr: (1 - avg(probe_success) by (service)) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High error rate for {{ $labels.service }}"
+          description: "{{ $labels.service }} has error rate above 10%."
+
+      - alert: AverageResponseTimeHigh
+        expr: avg(probe_http_duration_seconds) by (category) > 3
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High average response time for {{ $labels.category }} endpoints"
+          description: "Average response time for {{ $labels.category }} category is above 3 seconds."

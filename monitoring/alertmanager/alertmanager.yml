@@ -1,0 +1,117 @@
+global:
+  smtp_smarthost: 'smtp.gmail.com:587'
+  smtp_from: 'alertmanager@foodfast.local'
+  smtp_auth_username: 'your-email@gmail.com'
+  smtp_auth_password: 'your-app-password'
+
+  # Slack (optional)
+  slack_api_url: 'https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK'
+
+route:
+  group_by: ['alertname', 'service', 'category']
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+  receiver: 'default-receiver'
+  
+  routes:
+    # Critical alerts - immediate notification
+    - match:
+        severity: critical
+      receiver: 'critical-receiver'
+      group_wait: 10s
+      repeat_interval: 1h
+
+    # High severity alerts
+    - match:
+        severity: high
+      receiver: 'high-receiver'
+      group_wait: 30s
+      repeat_interval: 2h
+
+    # Warning alerts
+    - match:
+        severity: warning
+      receiver: 'warning-receiver'
+      group_wait: 1m
+      repeat_interval: 6h
+
+    # Payment service alerts - always critical
+    - match:
+        service: payment-service
+      receiver: 'payment-receiver'
+      group_wait: 10s
+      repeat_interval: 30m
+
+receivers:
+  - name: 'default-receiver'
+    webhook_configs:
+      - url: 'http://localhost:5001/webhook'
+        send_resolved: true
+
+  - name: 'critical-receiver'
+    # Email for critical alerts
+    # email_configs:
+    #   - to: 'ops-team@company.com'
+    #     send_resolved: true
+    # Slack for critical alerts
+    # slack_configs:
+    #   - channel: '#alerts-critical'
+    #     send_resolved: true
+    #     title: '🚨 CRITICAL: {{ .GroupLabels.alertname }}'
+    #     text: '{{ range .Alerts }}{{ .Annotations.description }}{{ end }}'
+    webhook_configs:
+      - url: 'http://localhost:5001/webhook/critical'
+        send_resolved: true
+
+  - name: 'high-receiver'
+    webhook_configs:
+      - url: 'http://localhost:5001/webhook/high'
+        send_resolved: true
+
+  - name: 'warning-receiver'
+    webhook_configs:
+      - url: 'http://localhost:5001/webhook/warning'
+        send_resolved: true
+
+  - name: 'payment-receiver'
+    # Payment alerts are business critical
+    # email_configs:
+    #   - to: 'finance-team@company.com, ops-team@company.com'
+    #     send_resolved: true
+    webhook_configs:
+      - url: 'http://localhost:5001/webhook/payment'
+        send_resolved: true
+
+inhibit_rules:
+  # If API Gateway is down, inhibit all endpoint alerts
+  - source_match:
+      alertname: APIGatewayDown
+    target_match_re:
+      category: '.*'
+    equal: ['instance']
+
+  # If a service is down, inhibit its endpoint alerts
+  - source_match:
+      alertname: 'UserServiceDown'
+    target_match:
+      service: 'user-service'
+    equal: ['service']
+
+  - source_match:
+      alertname: 'ProductServiceDown'
+    target_match:
+      service: 'product-service'
+    equal: ['service']
+
+  - source_match:
+      alertname: 'OrderServiceDown'
+    target_match:
+      service: 'order-service'
+    equal: ['service']
+
+  - source_match:
+      alertname: 'PaymentServiceDown'
+    target_match:
+      service: 'payment-service'
+    equal: ['service']

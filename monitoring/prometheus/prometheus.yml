@@ -1,0 +1,457 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    monitor: 'foodfast-monitor'
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+          - alertmanager:9093
+
+rule_files:
+  - /etc/prometheus/alerts.yml
+
+scrape_configs:
+  # Prometheus self-monitoring
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # Node Exporter - System metrics
+  - job_name: 'node-exporter'
+    static_configs:
+      - targets: ['node-exporter:9100']
+
+  # Blackbox Exporter self-monitoring
+  - job_name: 'blackbox-exporter'
+    static_configs:
+      - targets: ['blackbox-exporter:9115']
+
+  # ============================================
+  # MICROSERVICES PROMETHEUS METRICS (direct scrape)
+  # ============================================
+  - job_name: 'api-gateway-metrics'
+    static_configs:
+      - targets: ['api-gateway:8743']
+        labels:
+          service: api-gateway
+    metrics_path: /metrics
+
+  - job_name: 'user-service-metrics'
+    static_configs:
+      - targets: ['user-service:3001']
+        labels:
+          service: user-service
+    metrics_path: /metrics
+
+  - job_name: 'product-service-metrics'
+    static_configs:
+      - targets: ['product-service:3002']
+        labels:
+          service: product-service
+    metrics_path: /metrics
+
+  - job_name: 'order-service-metrics'
+    static_configs:
+      - targets: ['order-service:3003']
+        labels:
+          service: order-service
+    metrics_path: /metrics
+
+  - job_name: 'payment-service-metrics'
+    static_configs:
+      - targets: ['payment-service:3004']
+        labels:
+          service: payment-service
+    metrics_path: /metrics
+
+  - job_name: 'email-service-metrics'
+    static_configs:
+      - targets: ['email-service:3005']
+        labels:
+          service: email-service
+    metrics_path: /metrics
+
+  - job_name: 'socket-gateway-metrics'
+    static_configs:
+      - targets: ['socket-gateway:4000']
+        labels:
+          service: socket-gateway
+    metrics_path: /metrics
+
+  # ============================================
+  # API Gateway Health Check
+  # ============================================
+  - job_name: 'api-gateway-health'
+    metrics_path: /probe
+    params:
+      module: [http_2xx]
+    static_configs:
+      - targets:
+          - http://api-gateway:8743/health
+        labels:
+          service: api-gateway
+          endpoint: health
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter:9115
+
+  # ============================================
+  # CUSTOMER ENDPOINTS
+  # ============================================
+  - job_name: 'customer-auth-endpoints'
+    metrics_path: /probe
+    params:
+      module: [http_post_json]
+    scrape_interval: 30s
+    static_configs:
+      - targets:
+          - http://api-gateway:8743/api/customers/login
+        labels:
+          service: api-gateway
+          category: customer
+          endpoint: login
+          method: POST
+      - targets:
+          - http://api-gateway:8743/api/customers/register
+        labels:
+          service: api-gateway
+          category: customer
+          endpoint: register
+          method: POST
+      - targets:
+          - http://api-gateway:8743/api/customers/verify
+        labels:
+          service: api-gateway
+          category: customer
+          endpoint: verify
+          method: POST
+      - targets:
+          - http://api-gateway:8743/api/customers/forgot-password
+        labels:
+          service: api-gateway
+          category: customer
+          endpoint: forgot-password
+          method: POST
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter:9115
+
+  - job_name: 'customer-address-endpoints'
+    metrics_path: /probe
+    params:
+      module: [http_2xx_auth]
+    scrape_interval: 30s
+    static_configs:
+      - targets:
+          - http://api-gateway:8743/api/customers/addresses
+        labels:
+          service: api-gateway
+          category: customer
+          endpoint: addresses
+          method: GET
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter:9115
+
+  # ============================================
+  # RESTAURANT ENDPOINTS
+  # ============================================
+  - job_name: 'restaurant-auth-endpoints'
+    metrics_path: /probe
+    params:
+      module: [http_post_json]
+    scrape_interval: 30s
+    static_configs:
+      - targets:
+          - http://api-gateway:8743/api/restaurants/login
+        labels:
+          service: api-gateway
+          category: restaurant
+          endpoint: owner-login
+          method: POST
+      - targets:
+          - http://api-gateway:8743/api/restaurants/signup
+        labels:
+          service: api-gateway
+          category: restaurant
+          endpoint: owner-signup
+          method: POST
+      - targets:
+          - http://api-gateway:8743/api/restaurants/verify
+        labels:
+          service: api-gateway
+          category: restaurant
+          endpoint: owner-verify
+          method: POST
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter:9115
+
+  - job_name: 'restaurant-catalog-endpoints'
+    metrics_path: /probe
+    params:
+      module: [http_2xx]
+    scrape_interval: 30s
+    static_configs:
+      - targets:
+          - http://api-gateway:8743/api/restaurants/catalog
+        labels:
+          service: api-gateway
+          category: restaurant
+          endpoint: catalog-list
+          method: GET
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter:9115
+
+  # ============================================
+  # ADMIN ENDPOINTS
+  # ============================================
+  - job_name: 'admin-endpoints'
+    metrics_path: /probe
+    params:
+      module: [http_2xx_auth]
+    scrape_interval: 30s
+    static_configs:
+      - targets:
+          - http://api-gateway:8743/api/admin/customers
+        labels:
+          service: api-gateway
+          category: admin
+          endpoint: list-customers
+          method: GET
+      - targets:
+          - http://api-gateway:8743/api/admin/owners
+        labels:
+          service: api-gateway
+          category: admin
+          endpoint: list-owners
+          method: GET
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter:9115
+
+  # ============================================
+  # ORDER ENDPOINTS
+  # ============================================
+  - job_name: 'order-customer-endpoints'
+    metrics_path: /probe
+    params:
+      module: [http_2xx_auth]
+    scrape_interval: 30s
+    static_configs:
+      - targets:
+          - http://api-gateway:8743/customer/orders
+        labels:
+          service: api-gateway
+          category: order
+          endpoint: customer-orders
+          method: GET
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter:9115
+
+  - job_name: 'order-owner-endpoints'
+    metrics_path: /probe
+    params:
+      module: [http_2xx_auth]
+    scrape_interval: 30s
+    static_configs:
+      - targets:
+          - http://api-gateway:8743/owner/orders
+        labels:
+          service: api-gateway
+          category: order
+          endpoint: owner-orders
+          method: GET
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter:9115
+
+  - job_name: 'order-admin-endpoints'
+    metrics_path: /probe
+    params:
+      module: [http_2xx_auth]
+    scrape_interval: 30s
+    static_configs:
+      - targets:
+          - http://api-gateway:8743/admin/orders
+        labels:
+          service: api-gateway
+          category: order
+          endpoint: admin-orders
+          method: GET
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter:9115
+
+  # ============================================
+  # INTERNAL MICROSERVICES
+  # ============================================
+  - job_name: 'user-service'
+    metrics_path: /probe
+    params:
+      module: [http_2xx]
+    static_configs:
+      - targets:
+          - http://user-service:3001/health
+        labels:
+          service: user-service
+          endpoint: health
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter:9115
+
+  - job_name: 'product-service'
+    metrics_path: /probe
+    params:
+      module: [http_2xx]
+    static_configs:
+      - targets:
+          - http://product-service:3002/health
+        labels:
+          service: product-service
+          endpoint: health
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter:9115
+
+  - job_name: 'order-service'
+    metrics_path: /probe
+    params:
+      module: [http_2xx]
+    static_configs:
+      - targets:
+          - http://order-service:3003/health
+        labels:
+          service: order-service
+          endpoint: health
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter:9115
+
+  - job_name: 'payment-service'
+    metrics_path: /probe
+    params:
+      module: [http_2xx]
+    static_configs:
+      - targets:
+          - http://payment-service:3004/health
+        labels:
+          service: payment-service
+          endpoint: health
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter:9115
+
+  - job_name: 'email-service'
+    metrics_path: /probe
+    params:
+      module: [http_2xx]
+    static_configs:
+      - targets:
+          - http://email-service:3005/health
+        labels:
+          service: email-service
+          endpoint: health
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter:9115
+
+  - job_name: 'socket-gateway'
+    metrics_path: /probe
+    params:
+      module: [http_2xx]
+    static_configs:
+      - targets:
+          - http://socket-gateway:4000/health
+        labels:
+          service: socket-gateway
+          endpoint: health
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter:9115
+
+  # ============================================
+  # RABBITMQ MONITORING
+  # ============================================
+  - job_name: 'rabbitmq'
+    metrics_path: /probe
+    params:
+      module: [http_2xx]
+    static_configs:
+      - targets:
+          - http://rabbitmq:15672/api/overview
+        labels:
+          service: rabbitmq
+          endpoint: management-api
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter:9115

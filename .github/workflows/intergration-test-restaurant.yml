@@ -1,4 +1,4 @@
-name: Restaurant Service Integration Test
+name: Product Service Integration Test
 
 on:
   push:
@@ -6,14 +6,14 @@ on:
       - main
       - source
     paths:
-      - 'backend/restaurant-service/**'
+      - 'server/apps/product-service/**'
       - '.github/workflows/intergration-test-restaurant.yml'
   pull_request:
     branches:
       - main
       - source
     paths:
-      - 'backend/restaurant-service/**'
+      - 'server/apps/product-service/**'
   workflow_dispatch:
 
 jobs:
@@ -26,31 +26,31 @@ jobs:
 
       - name: Start Docker Compose Stack
         shell: powershell
+        working-directory: server
         run: |
-          Write-Host "Checking CNPM Docker Compose stack..." -ForegroundColor Cyan
+          Write-Host "Checking CN_FoodFast Docker Compose stack..." -ForegroundColor Cyan
           
-          # Check if containers are already running
-          $running = docker-compose -p cnpm-final-project ps -q 2>$null | Out-String
+          $running = docker-compose ps -q 2>$null | Out-String
           
           if ($running) {
             Write-Host "Stack already running, checking health..." -ForegroundColor Green
-            docker-compose -p cnpm-final-project ps
+            docker-compose ps
           } else {
             Write-Host "Starting Docker Compose stack..." -ForegroundColor Yellow
-            docker-compose -p cnpm-final-project up -d mongodb mongodb-restaurant mongodb-order mongodb-payment redis kafka zookeeper
+            docker-compose up -d productdb rabbitmq
             
             Write-Host "`nWaiting for services to be ready..." -ForegroundColor Cyan
             Start-Sleep -Seconds 15
           }
           
           Write-Host "`nDocker Compose Services Status:" -ForegroundColor Cyan
-          docker-compose -p cnpm-final-project ps
+          docker-compose ps
           
-          Write-Host "`nMongoDB Health Check:" -ForegroundColor Cyan
-          docker ps --filter "name=mongodb" --format "table {{.Names}}\t{{.Status}}"
+          Write-Host "`nPostgreSQL Health Check:" -ForegroundColor Cyan
+          docker ps --filter "name=productdb" --format "table {{.Names}}\t{{.Status}}"
 
-  restaurant-integration-test:
-    name: Restaurant Service Integration Test
+  product-integration-test:
+    name: Product Service Integration Test
     runs-on: self-hosted
     needs: setup-infrastructure
     steps:
@@ -63,22 +63,19 @@ jobs:
           node-version: '20'
 
       - name: Install Dependencies
-        working-directory: backend/restaurant-service
+        working-directory: server/apps/product-service
         run: npm ci
 
       - name: Run Integration Tests
-        working-directory: backend/restaurant-service
+        working-directory: server/apps/product-service
         shell: powershell
-        env:
-          MONGO_RESTAURANT_URL: mongodb://restaurant:restaurant123@localhost:28017/Restaurant
-          JWT_SECRET: test-secret
         run: |
           $ErrorActionPreference = 'Continue'
-          Write-Host "Starting Restaurant Service Integration Tests..." -ForegroundColor Cyan
+          Write-Host "Starting Product Service Integration Tests..." -ForegroundColor Cyan
           $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
           Write-Host "[$timestamp] Test execution started" -ForegroundColor Green
           
-          $logFile = "restaurant-integration-test.log"
+          $logFile = "product-integration-test.log"
           npm run test:integration *>&1 | ForEach-Object {
             $_ | Out-File -FilePath $logFile -Append -Encoding utf8
             Write-Host $_
@@ -95,81 +92,81 @@ jobs:
             $color = "Red"
           }
           
-          $statusMsg = "[$timestamp] Restaurant tests $status (exit code: $exitCode)"
+          $statusMsg = "[$timestamp] Product tests $status (exit code: $exitCode)"
           Write-Host $statusMsg -ForegroundColor $color
           $statusMsg | Out-File -FilePath $logFile -Append -Encoding utf8
           
           if ($exitCode -ne 0) { exit $exitCode }
         continue-on-error: true
 
-      - name: Upload Test Logs
+      - name: Upload test logs
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: restaurant-integration-logs
-          path: backend/restaurant-service/restaurant-integration-test.log
+          name: product-integration-test-logs
+          path: server/apps/product-service/product-integration-test.log
           retention-days: 7
 
-      - name: Push Restaurant Logs to Loki
+      - name: Push logs to Grafana Loki
         if: always()
         shell: powershell
-        working-directory: backend/restaurant-service
+        working-directory: server/apps/product-service
         env:
-          LOKI_URL: ${{ secrets.LOKI_URL }}
-          LOKI_USERNAME: ${{ secrets.LOKI_USERNAME }}
-          LOKI_PASSWORD: ${{ secrets.LOKI_PASSWORD }}
+          LOKI_URL: ${{ secrets.GRAFANA_LOKI_URL }}
+          LOKI_USERNAME: ${{ secrets.GRAFANA_LOKI_USERNAME }}
+          LOKI_API_KEY: ${{ secrets.GRAFANA_LOKI_API_KEY }}
         run: |
-          if (-not $env:LOKI_URL) {
-            Write-Host "WARNING: LOKI_URL not configured, skipping log export" -ForegroundColor Yellow
+          $logFile = "product-integration-test.log"
+          
+          if (-not (Test-Path $logFile)) {
+            Write-Host "No log file found, skipping Loki push" -ForegroundColor Yellow
             exit 0
           }
           
-          if (-not (Test-Path "restaurant-integration-test.log")) {
-            Write-Host "WARNING: Log file not found" -ForegroundColor Yellow
+          Write-Host "Pushing logs to Grafana Loki..." -ForegroundColor Cyan
+          
+          # Read log content
+          $logContent = Get-Content $logFile -Raw -ErrorAction SilentlyContinue
+          if (-not $logContent) {
+            Write-Host "Log file is empty" -ForegroundColor Yellow
             exit 0
           }
           
-          Write-Host "Pushing Restaurant Service logs to Loki..." -ForegroundColor Cyan
+          # Prepare Loki push payload
+          $timestamp = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds() * 1000000
           
-          $script = 'import json,os,time,sys;from pathlib import Path;log_file=""restaurant-integration-test.log"";'
-          $script += 'exit(0) if not Path(log_file).exists() else None;'
-          $script += 'f=open(log_file,""r"",encoding=""utf-8"",errors=""ignore"");content=f.read();f.close();'
-          $script += 'test_status=""passed"" if ""PASSED"" in content else (""failed"" if ""FAILED"" in content else ""unknown"");'
-          $script += 'labels={""job"":""integration-tests"",""service"":""restaurant"",""repo"":os.environ.get(""GITHUB_REPOSITORY"",""unknown""),""workflow"":os.environ.get(""GITHUB_WORKFLOW"",""unknown""),""run_id"":os.environ.get(""GITHUB_RUN_ID"",""unknown""),""run_number"":os.environ.get(""GITHUB_RUN_NUMBER"",""unknown""),""branch"":os.environ.get(""GITHUB_REF_NAME"",""unknown""),""commit"":os.environ.get(""GITHUB_SHA"",""unknown"")[:7],""test_status"":test_status,""log_type"":""integration-test"",""environment"":""ci""};'
-          $script += 'values=[];base_ts=int(time.time()*1e9);'
-          $script += 'f=open(log_file,""r"",encoding=""utf-8"",errors=""ignore"");lines=f.readlines();f.close();'
-          $script += '[values.append([str(base_ts+idx*1000),line.rstrip()]) for idx,line in enumerate(lines)];'
-          $script += 'f=open(""loki-payload.json"",""w"",encoding=""utf-8"");json.dump({""streams"":[{""stream"":labels,""values"":values}]},f);f.close();'
-          $script += 'print(f""Prepared {len(values)} log lines (status: {test_status})"")'
+          $payload = @{
+            streams = @(
+              @{
+                stream = @{
+                  job = "github-actions"
+                  service = "product-service"
+                  type = "integration-test"
+                  repository = "${{ github.repository }}"
+                  branch = "${{ github.ref_name }}"
+                  commit = "${{ github.sha }}"
+                  run_id = "${{ github.run_id }}"
+                  workflow = "product-integration-test"
+                }
+                values = @(
+                  @("$timestamp", $logContent)
+                )
+              }
+            )
+          } | ConvertTo-Json -Depth 10 -Compress
           
-          python -c $script
-          
-          if (-not (Test-Path "loki-payload.json")) {
-            Write-Host "ERROR: Failed to generate payload" -ForegroundColor Red
-            exit 1
+          # Push to Loki
+          $headers = @{
+            "Content-Type" = "application/json"
           }
           
-          if ($env:LOKI_USERNAME -and $env:LOKI_PASSWORD) {
-            Write-Host "Using basic authentication" -ForegroundColor Cyan
-            $response = curl.exe -sS -w "`n%{http_code}" -X POST `
-              -u "${env:LOKI_USERNAME}:${env:LOKI_PASSWORD}" `
-              -H "Content-Type: application/json" `
-              $env:LOKI_URL `
-              --data-binary "@loki-payload.json" 2>&1
-          } else {
-            Write-Host "No authentication (LOKI_USERNAME not set)" -ForegroundColor Yellow
-            $response = curl.exe -sS -w "`n%{http_code}" -X POST `
-              -H "Content-Type: application/json" `
-              $env:LOKI_URL `
-              --data-binary "@loki-payload.json" 2>&1
-          }
+          $auth = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes("${env:LOKI_USERNAME}:${env:LOKI_API_KEY}"))
+          $headers["Authorization"] = "Basic $auth"
           
-          $lines = $response -split "`n"
-          $httpCode = $lines[-1]
-          
-          if ($httpCode -eq "204" -or $httpCode -eq "200") {
-            Write-Host "SUCCESS: Pushed Restaurant logs to Loki (HTTP $httpCode)" -ForegroundColor Green
-          } else {
-            Write-Host "ERROR: Failed to push logs (HTTP $httpCode)" -ForegroundColor Red
-            exit 1
+          try {
+            $response = Invoke-RestMethod -Uri "${env:LOKI_URL}/loki/api/v1/push" -Method Post -Headers $headers -Body $payload
+            Write-Host "Logs pushed to Loki successfully!" -ForegroundColor Green
+          } catch {
+            Write-Host "Failed to push logs to Loki: $_" -ForegroundColor Red
+            # Don't fail the workflow if Loki push fails
           }

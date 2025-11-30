@@ -8,6 +8,11 @@ module.exports = {
   testMatch: ['**/__tests__/integration/**/*.test.js'],
   setupFilesAfterEnv: ['<rootDir>/src/__tests__/integration/setup.js'],
   
+  // Custom reporter for formatted output
+  reporters: [
+    '<rootDir>/../../libs/jest-custom-reporter.cjs'
+  ],
+  
   // Longer timeout for integration tests
   testTimeout: 30000,
   
@@ -18,7 +23,8 @@ module.exports = {
   clearMocks: true,
   restoreMocks: true,
   
-  // Coverage settings
+  // Coverage settings - disabled for cleaner output
+  collectCoverage: false,
   collectCoverageFrom: [
     'src/**/*.js',
     '!src/__tests__/**',

@@ -7,9 +7,15 @@ module.exports = {
   testEnvironment: 'node',
   testMatch: ['**/__tests__/integration/**/*.test.js'],
   setupFilesAfterEnv: ['<rootDir>/__tests__/integration/setup.js'],
+  
+  // Custom reporter for formatted output
+  reporters: [
+    '<rootDir>/../../libs/jest-custom-reporter.cjs'
+  ],
+  
   testTimeout: 30000,
-  verbose: true,
-  collectCoverage: true,
+  verbose: false,
+  collectCoverage: false,
   coverageDirectory: 'coverage/integration',
   coverageReporters: ['text', 'lcov', 'json-summary'],
   coveragePathIgnorePatterns: [

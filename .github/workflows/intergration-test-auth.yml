@@ -64,12 +64,13 @@ jobs:
           node-version: '20'
 
       - name: Install Dependencies
+        shell: powershell
         working-directory: server/apps/user-service
         run: npm ci
 
       - name: Run Integration Tests
-        working-directory: server/apps/user-service
         shell: powershell
+        working-directory: server/apps/user-service
         run: |
           $ErrorActionPreference = 'Continue'
           Write-Host "Starting User Service Integration Tests..." -ForegroundColor Cyan

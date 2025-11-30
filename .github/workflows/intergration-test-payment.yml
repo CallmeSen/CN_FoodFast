@@ -63,12 +63,13 @@ jobs:
           node-version: '20'
 
       - name: Install Dependencies
+        shell: powershell
         working-directory: server/apps/payment-service
         run: npm ci
 
       - name: Run Integration Tests
-        working-directory: server/apps/payment-service
         shell: powershell
+        working-directory: server/apps/payment-service
         run: |
           $ErrorActionPreference = 'Continue'
           Write-Host "Starting Payment Service Integration Tests..." -ForegroundColor Cyan

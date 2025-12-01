@@ -106,9 +106,10 @@ jobs:
           Write-Host "Pushing Product Service logs to Loki..." -ForegroundColor Cyan
           
           # Create Python script file for Loki payload
-          @'
-          import json, os, time
+          $pythonScript = @"
+          import json, os, time, re
           from pathlib import Path
+          from datetime import datetime
           
           log_file = "product-integration-test.log"
           if not Path(log_file).exists():
@@ -117,7 +118,39 @@ jobs:
           with open(log_file, "r", encoding="utf-8", errors="ignore") as f:
               content = f.read()
           
-          test_status = "passed" if "PASSED" in content else ("failed" if "FAILED" in content else "unknown")
+          suites_match = re.search(r"Test Suites:\s*(\d+)\s*failed.*?(\d+)\s*passed.*?(\d+)\s*total", content)
+          tests_match = re.search(r"Tests:\s*(\d+)\s*failed.*?(\d+)\s*passed.*?(\d+)\s*total", content)
+          time_match = re.search(r"Time:\s*([\d.]+)\s*s", content)
+          
+          suites_failed = suites_match.group(1) if suites_match else "0"
+          suites_passed = suites_match.group(2) if suites_match else "0"
+          suites_total = suites_match.group(3) if suites_match else "0"
+          tests_failed = tests_match.group(1) if tests_match else "0"
+          tests_passed = tests_match.group(2) if tests_match else "0"
+          tests_total = tests_match.group(3) if tests_match else "0"
+          test_time = time_match.group(1) if time_match else "0"
+          
+          pass_tests = re.findall(r"PASS\s+(src[^\n]+)", content)
+          fail_tests = re.findall(r"FAIL\s+(src[^\n]+)", content)
+          
+          test_status = "passed" if int(tests_failed) == 0 else "failed"
+          
+          timestamp = datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
+          summary_lines = [
+              timestamp,
+              f"Test Suites: {suites_failed} failed, {suites_passed} passed, {suites_total} total",
+              f"Tests:       {tests_failed} failed, {tests_passed} passed, {tests_total} total",
+              "Snapshots:   0 total",
+              f"Time:        {test_time} s",
+              "",
+              "Success Test:"
+          ]
+          for t in pass_tests:
+              summary_lines.append(f" PASS  {t}")
+          summary_lines.append("")
+          summary_lines.append("Error Test:")
+          for t in fail_tests:
+              summary_lines.append(f" FAIL  {t}")
           
           labels = {
               "job": "integration-tests",
@@ -136,17 +169,17 @@ jobs:
           values = []
           base_ts = int(time.time() * 1e9)
           
-          with open(log_file, "r", encoding="utf-8", errors="ignore") as f:
-              lines = f.readlines()
-          
-          for idx, line in enumerate(lines):
-              values.append([str(base_ts + idx * 1000), line.rstrip()])
+          for idx, line in enumerate(summary_lines):
+              values.append([str(base_ts + idx * 1000), line])
           
           with open("loki-payload.json", "w", encoding="utf-8") as f:
               json.dump({"streams": [{"stream": labels, "values": values}]}, f)
           
           print(f"Prepared {len(values)} log lines (status: {test_status})")
-          '@ | Set-Content -Path "generate_loki_payload.py" -Encoding ASCII
+          for line in summary_lines:
+              print(line)
+          "@
+          $pythonScript | Set-Content -Path "generate_loki_payload.py" -Encoding ASCII
           
           python generate_loki_payload.py
           

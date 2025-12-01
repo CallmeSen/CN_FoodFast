@@ -71,9 +71,34 @@ jobs:
         shell: powershell
         working-directory: server/apps/product-service
         run: |
+          $ErrorActionPreference = 'Continue'
           Write-Host "Starting Product Service Integration Tests..." -ForegroundColor Cyan
-          npm run test:integration 2>&1 | Tee-Object -FilePath product-integration-test.log
-          exit $LASTEXITCODE
+          $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+          Write-Host "[$timestamp] Test execution started" -ForegroundColor Green
+          
+          # Run tests and capture all output
+          $logFile = "product-integration-test.log"
+          npm run test:integration *>&1 | ForEach-Object {
+            $_ | Out-File -FilePath $logFile -Append -Encoding utf8
+            Write-Host $_
+          }
+          
+          $exitCode = $LASTEXITCODE
+          $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+          
+          if ($exitCode -eq 0) {
+            $status = "PASSED"
+            $color = "Green"
+          } else {
+            $status = "FAILED"
+            $color = "Red"
+          }
+          
+          $statusMsg = "[$timestamp] Product tests $status (exit code: $exitCode)"
+          Write-Host $statusMsg -ForegroundColor $color
+          $statusMsg | Out-File -FilePath $logFile -Append -Encoding utf8
+          
+          if ($exitCode -ne 0) { exit $exitCode }
         continue-on-error: true
 
       - name: Upload test logs

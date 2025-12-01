@@ -146,7 +146,7 @@ jobs:
               json.dump({"streams": [{"stream": labels, "values": values}]}, f)
           
           print(f"Prepared {len(values)} log lines (status: {test_status})")
-          '@ | Out-File -FilePath "generate_loki_payload.py" -Encoding utf8
+          '@ | Set-Content -Path "generate_loki_payload.py" -Encoding ASCII
           
           python generate_loki_payload.py
           

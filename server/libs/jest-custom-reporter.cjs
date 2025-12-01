@@ -21,6 +21,11 @@ class CustomReporter {
 
     console.log('\n');
     
+    // Timestamp
+    const now = new Date();
+    const timestamp = now.toISOString().replace('T', ' ').substring(0, 19);
+    console.log(`[${timestamp}]`);
+    
     // Summary
     const failedSuites = numFailedTestSuites > 0 ? `${numFailedTestSuites} failed, ` : '';
     const passedSuites = numPassedTestSuites > 0 ? `${numPassedTestSuites} passed, ` : '';

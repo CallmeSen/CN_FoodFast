@@ -105,18 +105,17 @@ jobs:
           
           Write-Host "Pushing Payment Service logs to Loki..." -ForegroundColor Cyan
           
-          # Generate Python script for Loki payload (inline like CNPM-Final-Project)
-          $script = 'import json,os,time,re;from pathlib import Path;log_file=""payment-integration-test.log"";'
+          # Generate Python script for Loki payload (same pattern as CNPM-Final-Project)
+          $script = 'import json,os,time,sys;from pathlib import Path;log_file=""payment-integration-test.log"";'
           $script += 'exit(0) if not Path(log_file).exists() else None;'
           $script += 'f=open(log_file,""r"",encoding=""utf-8"",errors=""ignore"");content=f.read();f.close();'
-          $script += 'match=re.search(r""(\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\].*?)$"",content,re.DOTALL);'
-          $script += 'summary=match.group(1).strip() if match else (content[-2000:] if len(content)>2000 else content);'
-          $script += 'test_status=""failed"" if ""FAIL"" in summary or ""failed"" in summary else ""passed"";'
+          $script += 'test_status=""passed"" if ""PASSED"" in content else (""failed"" if ""FAILED"" in content or ""FAIL"" in content else ""unknown"");'
           $script += 'labels={""job"":""integration-tests"",""service"":""payment"",""repo"":os.environ.get(""GITHUB_REPOSITORY"",""unknown""),""workflow"":os.environ.get(""GITHUB_WORKFLOW"",""unknown""),""run_id"":os.environ.get(""GITHUB_RUN_ID"",""unknown""),""run_number"":os.environ.get(""GITHUB_RUN_NUMBER"",""unknown""),""branch"":os.environ.get(""GITHUB_REF_NAME"",""unknown""),""commit"":os.environ.get(""GITHUB_SHA"",""unknown"")[:7],""test_status"":test_status,""log_type"":""integration-test"",""environment"":""ci""};'
-          $script += 'values=[];base_ts=int(time.time()*1e9);lines=summary.split(chr(10));'
+          $script += 'values=[];base_ts=int(time.time()*1e9);'
+          $script += 'f=open(log_file,""r"",encoding=""utf-8"",errors=""ignore"");lines=f.readlines();f.close();'
           $script += '[values.append([str(base_ts+idx*1000),line.rstrip()]) for idx,line in enumerate(lines)];'
           $script += 'f=open(""loki-payload.json"",""w"",encoding=""utf-8"");json.dump({""streams"":[{""stream"":labels,""values"":values}]},f);f.close();'
-          $script += 'print(f""Prepared {len(values)} log lines (status: {test_status})"");print(summary)'
+          $script += 'print(f""Prepared {len(values)} log lines (status: {test_status})"")'
           
           python -c $script
           

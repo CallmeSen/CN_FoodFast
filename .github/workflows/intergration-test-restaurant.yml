@@ -105,54 +105,19 @@ jobs:
           
           Write-Host "Pushing Product Service logs to Loki..." -ForegroundColor Cyan
           
-          # Create Python script file for Loki payload
-          $pythonScript = @"
-          import json, os, time, re
-          from pathlib import Path
+          # Generate Python script for Loki payload (inline like CNPM-Final-Project)
+          $script = 'import json,os,time,re;from pathlib import Path;log_file=""product-integration-test.log"";'
+          $script += 'exit(0) if not Path(log_file).exists() else None;'
+          $script += 'f=open(log_file,""r"",encoding=""utf-8"",errors=""ignore"");content=f.read();f.close();'
+          $script += 'match=re.search(r""(\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\].*?)$"",content,re.DOTALL);'
+          $script += 'summary=match.group(1).strip() if match else (content[-2000:] if len(content)>2000 else content);'
+          $script += 'test_status=""failed"" if ""FAIL"" in summary or ""failed"" in summary else ""passed"";'
+          $script += 'labels={""job"":""integration-tests"",""service"":""product"",""repo"":os.environ.get(""GITHUB_REPOSITORY"",""unknown""),""workflow"":os.environ.get(""GITHUB_WORKFLOW"",""unknown""),""run_id"":os.environ.get(""GITHUB_RUN_ID"",""unknown""),""run_number"":os.environ.get(""GITHUB_RUN_NUMBER"",""unknown""),""branch"":os.environ.get(""GITHUB_REF_NAME"",""unknown""),""commit"":os.environ.get(""GITHUB_SHA"",""unknown"")[:7],""test_status"":test_status,""log_type"":""integration-test"",""environment"":""ci""};'
+          $script += 'values=[[str(int(time.time()*1e9)),summary]];'
+          $script += 'f=open(""loki-payload.json"",""w"",encoding=""utf-8"");json.dump({""streams"":[{""stream"":labels,""values"":values}]},f);f.close();'
+          $script += 'print(f""Prepared log (status: {test_status})"");print(summary)'
           
-          log_file = "product-integration-test.log"
-          if not Path(log_file).exists():
-              exit(0)
-          
-          with open(log_file, "r", encoding="utf-8", errors="ignore") as f:
-              content = f.read()
-          
-          # Find the custom reporter output section (starts with timestamp)
-          match = re.search(r"(\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\].*?)$", content, re.DOTALL)
-          if match:
-              summary = match.group(1).strip()
-          else:
-              summary = content[-2000:] if len(content) > 2000 else content
-          
-          # Determine test status
-          test_status = "failed" if "FAIL" in summary or "failed" in summary else "passed"
-          
-          labels = {
-              "job": "integration-tests",
-              "service": "product",
-              "repo": os.environ.get("GITHUB_REPOSITORY", "unknown"),
-              "workflow": os.environ.get("GITHUB_WORKFLOW", "unknown"),
-              "run_id": os.environ.get("GITHUB_RUN_ID", "unknown"),
-              "run_number": os.environ.get("GITHUB_RUN_NUMBER", "unknown"),
-              "branch": os.environ.get("GITHUB_REF_NAME", "unknown"),
-              "commit": os.environ.get("GITHUB_SHA", "unknown")[:7],
-              "test_status": test_status,
-              "log_type": "integration-test",
-              "environment": "ci"
-          }
-          
-          # Send summary as single log entry
-          values = [[str(int(time.time() * 1e9)), summary]]
-          
-          with open("loki-payload.json", "w", encoding="utf-8") as f:
-              json.dump({"streams": [{"stream": labels, "values": values}]}, f)
-          
-          print(f"Prepared log (status: {test_status})")
-          print(summary)
-          "@
-          [System.IO.File]::WriteAllText("generate_loki_payload.py", $pythonScript, [System.Text.Encoding]::UTF8)
-          
-          python generate_loki_payload.py
+          python -c $script
           
           if (-not (Test-Path "loki-payload.json")) {
             Write-Host "ERROR: Failed to generate payload" -ForegroundColor Red

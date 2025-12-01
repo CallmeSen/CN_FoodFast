@@ -151,7 +151,7 @@ jobs:
           print(f"Prepared log (status: {test_status})")
           print(summary)
           "@
-          $pythonScript | Set-Content -Path "generate_loki_payload.py" -Encoding ASCII
+          [System.IO.File]::WriteAllText("generate_loki_payload.py", $pythonScript, [System.Text.Encoding]::UTF8)
           
           python generate_loki_payload.py
           

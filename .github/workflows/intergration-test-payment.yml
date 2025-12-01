@@ -84,72 +84,69 @@ jobs:
           path: server/apps/payment-service/payment-integration-test.log
           retention-days: 7
 
-      - name: Push logs to Grafana Loki
+      - name: Push Payment Logs to Loki
         if: always()
         shell: powershell
         working-directory: server/apps/payment-service
         env:
-          LOKI_URL: ${{ secrets.GRAFANA_LOKI_URL }}
-          LOKI_USERNAME: ${{ secrets.GRAFANA_LOKI_USERNAME }}
-          LOKI_API_KEY: ${{ secrets.GRAFANA_LOKI_API_KEY }}
+          LOKI_URL: ${{ secrets.LOKI_URL }}
+          LOKI_USERNAME: ${{ secrets.LOKI_USERNAME }}
+          LOKI_PASSWORD: ${{ secrets.LOKI_PASSWORD }}
         run: |
-          $logFile = "payment-integration-test.log"
-          
-          if (-not (Test-Path $logFile)) {
-            Write-Host "No log file found, skipping Loki push" -ForegroundColor Yellow
+          if (-not $env:LOKI_URL) {
+            Write-Host "WARNING: LOKI_URL not configured, skipping log export" -ForegroundColor Yellow
             exit 0
           }
           
-          Write-Host "Pushing logs to Grafana Loki..." -ForegroundColor Cyan
-          
-          $fullContent = Get-Content $logFile -Raw -ErrorAction SilentlyContinue
-          if (-not $fullContent) {
-            Write-Host "Log file is empty" -ForegroundColor Yellow
+          if (-not (Test-Path "payment-integration-test.log")) {
+            Write-Host "WARNING: Log file not found" -ForegroundColor Yellow
             exit 0
           }
           
-          # Extract only summary section (from "Test Suites:" to end) to avoid OutOfMemoryException
-          $summaryMatch = [regex]::Match($fullContent, '(?s)(Test Suites:.*)')
-          if ($summaryMatch.Success) {
-            $logContent = $summaryMatch.Value
-            Write-Host "Extracted test summary for Loki push" -ForegroundColor Green
+          Write-Host "Pushing Payment Service logs to Loki..." -ForegroundColor Cyan
+          
+          # Generate Python script for Loki payload
+          $script = 'import json,os,time,sys;from pathlib import Path;log_file="payment-integration-test.log";'
+          $script += 'exit(0) if not Path(log_file).exists() else None;'
+          $script += 'f=open(log_file,"r",encoding="utf-8",errors="ignore");content=f.read();f.close();'
+          $script += 'test_status="passed" if "PASSED" in content else ("failed" if "FAILED" in content else "unknown");'
+          $script += 'labels={"job":"integration-tests","service":"payment","repo":os.environ.get("GITHUB_REPOSITORY","unknown"),"workflow":os.environ.get("GITHUB_WORKFLOW","unknown"),"run_id":os.environ.get("GITHUB_RUN_ID","unknown"),"run_number":os.environ.get("GITHUB_RUN_NUMBER","unknown"),"branch":os.environ.get("GITHUB_REF_NAME","unknown"),"commit":os.environ.get("GITHUB_SHA","unknown")[:7],"test_status":test_status,"log_type":"integration-test","environment":"ci"};'
+          $script += 'values=[];base_ts=int(time.time()*1e9);'
+          $script += 'f=open(log_file,"r",encoding="utf-8",errors="ignore");lines=f.readlines();f.close();'
+          $script += '[values.append([str(base_ts+idx*1000),line.rstrip()]) for idx,line in enumerate(lines)];'
+          $script += 'f=open("loki-payload.json","w",encoding="utf-8");json.dump({"streams":[{"stream":labels,"values":values}]},f);f.close();'
+          $script += 'print(f"Prepared {len(values)} log lines (status: {test_status})")'
+          
+          python -c $script
+          
+          if (-not (Test-Path "loki-payload.json")) {
+            Write-Host "ERROR: Failed to generate payload" -ForegroundColor Red
+            exit 1
+          }
+          
+          # Prepare curl command
+          if ($env:LOKI_USERNAME -and $env:LOKI_PASSWORD) {
+            Write-Host "Using basic authentication" -ForegroundColor Cyan
+            $response = curl.exe -sS -w "`n%{http_code}" -X POST `
+              -u "${env:LOKI_USERNAME}:${env:LOKI_PASSWORD}" `
+              -H "Content-Type: application/json" `
+              $env:LOKI_URL `
+              --data-binary "@loki-payload.json" 2>&1
           } else {
-            $logContent = "No test summary found in log file"
-            Write-Host "Warning: Could not find test summary" -ForegroundColor Yellow
+            Write-Host "No authentication (LOKI_USERNAME not set)" -ForegroundColor Yellow
+            $response = curl.exe -sS -w "`n%{http_code}" -X POST `
+              -H "Content-Type: application/json" `
+              $env:LOKI_URL `
+              --data-binary "@loki-payload.json" 2>&1
           }
           
-          $timestamp = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds() * 1000000
+          $lines = $response -split "`n"
+          $httpCode = $lines[-1]
           
-          $payload = @{
-            streams = @(
-              @{
-                stream = @{
-                  job = "github-actions"
-                  service = "payment-service"
-                  type = "integration-test"
-                  repository = "${{ github.repository }}"
-                  branch = "${{ github.ref_name }}"
-                  commit = "${{ github.sha }}"
-                  run_id = "${{ github.run_id }}"
-                  workflow = "payment-integration-test"
-                }
-                values = @(
-                  @("$timestamp", $logContent)
-                )
-              }
-            )
-          } | ConvertTo-Json -Depth 10 -Compress
-          
-          $headers = @{
-            "Content-Type" = "application/json"
-          }
-          
-          $auth = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes("${env:LOKI_USERNAME}:${env:LOKI_API_KEY}"))
-          $headers["Authorization"] = "Basic $auth"
-          
-          try {
-            Invoke-RestMethod -Uri "${env:LOKI_URL}" -Method Post -Headers $headers -Body $payload
-            Write-Host "Logs pushed to Loki successfully!" -ForegroundColor Green
-          } catch {
-            Write-Host "Failed to push logs to Loki: $_" -ForegroundColor Red
+          if ($httpCode -eq "204" -or $httpCode -eq "200") {
+            Write-Host "SUCCESS: Pushed Payment logs to Loki (HTTP $httpCode)" -ForegroundColor Green
+          } else {
+            Write-Host "ERROR: Failed to push logs (HTTP $httpCode)" -ForegroundColor Red
+            Write-Host "Response: $($lines[0..$($lines.Length-2)] -join "`n")"
+            exit 1
           }

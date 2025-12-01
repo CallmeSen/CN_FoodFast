@@ -114,9 +114,10 @@ jobs:
           $script += 'summary=match.group(1).strip() if match else (content[-2000:] if len(content)>2000 else content);'
           $script += 'test_status=""failed"" if ""FAIL"" in summary or ""failed"" in summary else ""passed"";'
           $script += 'labels={""job"":""integration-tests"",""service"":""user"",""repo"":os.environ.get(""GITHUB_REPOSITORY"",""unknown""),""workflow"":os.environ.get(""GITHUB_WORKFLOW"",""unknown""),""run_id"":os.environ.get(""GITHUB_RUN_ID"",""unknown""),""run_number"":os.environ.get(""GITHUB_RUN_NUMBER"",""unknown""),""branch"":os.environ.get(""GITHUB_REF_NAME"",""unknown""),""commit"":os.environ.get(""GITHUB_SHA"",""unknown"")[:7],""test_status"":test_status,""log_type"":""integration-test"",""environment"":""ci""};'
-          $script += 'values=[[str(int(time.time()*1e9)),summary]];'
+          $script += 'values=[];base_ts=int(time.time()*1e9);lines=summary.split(chr(10));'
+          $script += '[values.append([str(base_ts+idx*1000),line.rstrip()]) for idx,line in enumerate(lines)];'
           $script += 'f=open(""loki-payload.json"",""w"",encoding=""utf-8"");json.dump({""streams"":[{""stream"":labels,""values"":values}]},f);f.close();'
-          $script += 'print(f""Prepared log (status: {test_status})"");print(summary)'
+          $script += 'print(f""Prepared {len(values)} log lines (status: {test_status})"");print(summary)'
           
           python -c $script
           

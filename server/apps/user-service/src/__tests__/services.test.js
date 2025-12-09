@@ -57,13 +57,13 @@ describe('Customer Service', () => {
       const mockProfile = { loyalty_points: 100 };
       const mockToken = 'jwt_token_abc123';
 
-      userRepository.findByEmail.mockResolvedValue(mockUser);
-      userRepository.getUserRoleCodes.mockResolvedValue(['customer']);
-      roleRepository.getRoleByCode.mockResolvedValue(mockRole);
-      userRepository.getCredential.mockResolvedValue(mockCredential);
-      bcrypt.compare.mockResolvedValue(true);
-      jwt.sign.mockReturnValue(mockToken);
-      userRepository.getCustomerProfile.mockResolvedValue(mockProfile);
+      // userRepository.findByEmail.mockResolvedValue(mockUser);
+      // userRepository.getUserRoleCodes.mockResolvedValue(['customer']);
+      // roleRepository.getRoleByCode.mockResolvedValue(mockRole);
+      // userRepository.getCredential.mockResolvedValue(mockCredential);
+      // bcrypt.compare.mockResolvedValue(true);
+      // jwt.sign.mockReturnValue(mockToken);
+      // userRepository.getCustomerProfile.mockResolvedValue(mockProfile);
 
       // WHEN - Customer attempts to login with correct email and password
       const result = await customerService.loginCustomer({

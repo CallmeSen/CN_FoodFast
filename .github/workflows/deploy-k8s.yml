@@ -9,7 +9,7 @@ on:
       - ".github/workflows/deploy-k8s.yml"
   pull_request:
     branches:
-      - main
+      - source
 
   release:
     types: [published]
